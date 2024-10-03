@@ -98,7 +98,7 @@ class DuckWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
 
-        # Initialize QSettings
+        # Initializing QSettings and other parameters
         self.settings = QSettings('zl0yxp', 'QuackDuck')
 
         self.setWindowFlags(
@@ -135,7 +135,7 @@ class DuckWidget(QtWidgets.QWidget):
         self.restart_audio_stream = False
 
         # Initialize missing attribute
-        self.is_jumping = False  # Added initialization
+        self.is_jumping = False
 
         # Playful state
         self.is_playful = False
@@ -144,29 +144,54 @@ class DuckWidget(QtWidgets.QWidget):
         self.last_playful_check = time.time()
         self.has_jumped = False  # New flag to prevent continuous jumping
 
-        # Load settings
+        # Loading settings
         self.input_devices = self.get_input_devices()
         self.load_settings()
 
-        self.current_volume = 0  # Current microphone volume
+        self.current_volume = 0  # Current microphone volume level
 
-        # Load skin
+        # Defining the default animation configuration
+        self.default_animations_config = {
+            "idle": ["0:0"],
+            "walk": ["1:0", "1:1", "1:2", "1:3", "1:4", "1:5"],
+            "listen": ["2:1"],
+            "fall": ["2:3"],
+            "jump": ["2:0", "2:1", "2:2", "2:3"],
+            "sleep": ["0:1"],
+            "sleep_transition": ["2:1"]
+        }
+
+        # Loading a skin or installing default animations
         if self.custom_skin_path:
-            self.load_skin(self.custom_skin_path)
+            success = self.load_skin(self.custom_skin_path)
+            if not success:
+                # If loading the skin failed, set the default configuration
+                self.animations_config = self.default_animations_config
+                self.load_sprites()
+                self.load_sound()
         else:
+            # Setting the default configuration
+            self.animations_config = self.default_animations_config
             self.load_sprites()
             self.load_sound()
 
-        # Frame indices for animations
-        self.frame_index = 0  # For walk frames
-        self.jump_index = 0  # For jump frames
+        # Make sure fall_frames and idle_frames are initialized
+        if hasattr(self, 'fall_frames') and self.fall_frames:
+            self.current_frame = self.fall_frames[0]
+        elif hasattr(self, 'idle_frames') and self.idle_frames:
+            self.current_frame = self.idle_frames[0]
+        else:
+            raise AttributeError("Failed to initialize animation frames.")
+
+        # Initialize frame indices for animations
+        self.frame_index = 0  # For walking shots
+        self.jump_index = 0  # For jump shots
         self.idle_frame_index = 0  # For idle frames
-        self.sleep_frame_index = 0  # For sleep frames
-        self.listen_frame_index = 0  # For listen frames
+        self.sleep_frame_index = 0  # For sleep shots
+        self.listen_frame_index = 0  # For listening frames
         self.fall_frame_index = 0  # For fall frames
 
-        self.current_frame = self.fall_frames[0] if self.fall_frames else self.idle_frames[0]
-
+        # Initializing timers and other components
         self.animation_timer = QtCore.QTimer()
         self.animation_timer.timeout.connect(self.update_animation)
         self.animation_timer.start(100)
@@ -200,15 +225,17 @@ class DuckWidget(QtWidgets.QWidget):
     def get_input_devices(self):
         input_devices = []
         seen_devices = set()
-        devices = sd.query_devices()
-
-        for idx, device in enumerate(devices):
-            if device["max_input_channels"] > 0:
-                device_name = device["name"]
-                if device_name not in seen_devices:
-                    input_devices.append((idx, device_name))
-                    seen_devices.add(device_name)
-
+        try:
+            devices = sd.query_devices()
+            for idx, device in enumerate(devices):
+                if device["max_input_channels"] > 0:
+                    device_name = device["name"]
+                    if device_name not in seen_devices:
+                        input_devices.append((idx, device_name))
+                        seen_devices.add(device_name)
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to get input devices: {e}")
+            print(f"Failed to get input devices: {e}")
         return input_devices
 
     def load_settings(self):
@@ -223,12 +250,12 @@ class DuckWidget(QtWidgets.QWidget):
         self.duck_stuck_bug = self.settings.value('duck_stuck_bug', True, type=bool)
         self.custom_skin_path = self.settings.value('custom_skin_path', '', type=str) or None
 
-        # If no microphone selected, choose the first one
+        # If no microphone is selected, select the first available one
         if self.selected_input_device_index is None and self.input_devices:
             self.selected_input_device_index = self.input_devices[0][0]
 
     def save_settings(self):
-        # Save settings
+        # Saving settings
         self.settings.setValue('mic_sensitivity', self.mic_sensitivity)
         self.settings.setValue('floor_level', self.floor_level)
         self.settings.setValue('floor_default', self.floor_default)
@@ -248,28 +275,41 @@ class DuckWidget(QtWidgets.QWidget):
                 os.makedirs(temp_dir)
                 zip_ref.extractall(temp_dir)
 
-            # Load the JSON configuration
+            # Loading JSON configuration
             json_path = os.path.join(temp_dir, 'config.json')
             if not os.path.exists(json_path):
+                QMessageBox.warning(self, "Error", "The config.json file is missing from the skin.")
                 return False
 
             with open(json_path, 'r') as f:
                 config = json.load(f)
 
-            # Read configuration
-            spritesheet_name = config.get('spritesheet', 'sprite_sheet.png')
-            sound_name = config.get('sound', 'wuak.mp3')
-            frame_width = config.get('frame_width', 32)
-            frame_height = config.get('frame_height', 32)
+            # Checking if all required fields are present
+            required_fields = ["spritesheet", "sound", "frame_width", "frame_height", "animations"]
+            for field in required_fields:
+                if field not in config:
+                    QMessageBox.warning(self, "Error", f"Missing field '{field}' in config.json.")
+                    return False
+
+            # Reading configuration
+            spritesheet_name = config.get('spritesheet')
+            sound_name = config.get('sound')
+            frame_width = config.get('frame_width')
+            frame_height = config.get('frame_height')
             animations = config.get('animations', {})
 
             spritesheet_path = os.path.join(temp_dir, spritesheet_name)
             sound_path = os.path.join(temp_dir, sound_name)
 
-            if not os.path.exists(spritesheet_path) or not os.path.exists(sound_path):
+            if not os.path.exists(spritesheet_path):
+                QMessageBox.warning(self, "Error", f"Sprite sheet file '{spritesheet_name}' not found.")
                 return False
 
-            # Update paths and configurations
+            if not os.path.exists(sound_path):
+                QMessageBox.warning(self, "Error", f"Sound file '{sound_name}' not found.")
+                return False
+
+            # Updating paths and configurations
             self.custom_skin_dir = temp_dir
             self.spritesheet_path = spritesheet_path
             self.sound_file = sound_path
@@ -277,7 +317,7 @@ class DuckWidget(QtWidgets.QWidget):
             self.frame_height = frame_height
             self.animations_config = animations
 
-            self.custom_skin_path = zip_path  # Store the path
+            self.custom_skin_path = zip_path  # Save path to skin
 
             # Reload sprites and sound
             self.load_sprites()
@@ -285,6 +325,7 @@ class DuckWidget(QtWidgets.QWidget):
 
             return True
         except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to load skin: {e}")
             print(f"Failed to load skin: {e}")
             return False
 
@@ -294,7 +335,7 @@ class DuckWidget(QtWidgets.QWidget):
             frame_width = self.frame_width
             frame_height = self.frame_height
         else:
-            # Default behavior
+            # Standard behavior
             spritesheet = QtGui.QPixmap(resource_path('ducky_spritesheet.png'))
             frame_width = 32
             frame_height = 32
@@ -302,9 +343,7 @@ class DuckWidget(QtWidgets.QWidget):
         scale_factor = self.scale_factor
 
         def get_frame(row, col):
-            frame = spritesheet.copy(
-                col * frame_width, row * frame_height, frame_width, frame_height
-            )
+            frame = spritesheet.copy(col * frame_width, row * frame_height, frame_width, frame_height)
             size = frame.size()
 
             frame = frame.scaled(
@@ -316,7 +355,7 @@ class DuckWidget(QtWidgets.QWidget):
             return frame
 
         if hasattr(self, 'animations_config'):
-            # Load animations based on config
+            # Loading animations based on configuration
             self.idle_frames = self.get_animation_frames(get_frame, self.animations_config.get('idle', []))
             self.walk_frames = self.get_animation_frames(get_frame, self.animations_config.get('walk', []))
             self.listen_frames = self.get_animation_frames(get_frame, self.animations_config.get('listen', []))
@@ -325,26 +364,42 @@ class DuckWidget(QtWidgets.QWidget):
             self.sleep_frames = self.get_animation_frames(get_frame, self.animations_config.get('sleep', []))
             self.sleep_transition_frames = self.get_animation_frames(get_frame, self.animations_config.get('sleep_transition', []))
         else:
-            # Default frames
-            self.idle_frames = [get_frame(0, 0), get_frame(0, 1)]
+            # Default animations if animations_config is not set
+            self.idle_frames = [get_frame(0, 0)]
             self.walk_frames = [get_frame(1, i) for i in range(6)]
-            self.listen_frames = [get_frame(2, 1), get_frame(2, 2)]
-            self.fall_frames = [get_frame(2, 3), get_frame(2, 4)]
-            self.jump_frames = [get_frame(2, i) for i in range(0, 4)]
-            self.sleep_frames = [get_frame(0, 1), get_frame(0, 2)]
+            self.listen_frames = [get_frame(2, 1)]
+            self.fall_frames = [get_frame(2, 3)]
+            self.jump_frames = [get_frame(2, i) for i in range(4)]
+            self.sleep_frames = [get_frame(0, 1)]
             self.sleep_transition_frames = [get_frame(2, 1)]
 
-        # Set current frame to the first idle frame
-        self.current_frame = self.idle_frames[0]
+        # Set current frame
+        if hasattr(self, 'fall_frames') and self.fall_frames:
+            self.current_frame = self.fall_frames[0]
+        elif hasattr(self, 'idle_frames') and self.idle_frames:
+            self.current_frame = self.idle_frames[0]
+        else:
+            raise AttributeError("Failed to initialize animation frames.")
+
+        # Initialize frame indices for animations
+        self.frame_index = 0  # For walking shots
+        self.jump_index = 0  # For jump shots
+        self.idle_frame_index = 0  # For idle frames
+        self.sleep_frame_index = 0  # For sleep shots
+        self.listen_frame_index = 0  # For listening frames
+        self.fall_frame_index = 0  # For fall frames
 
     def get_animation_frames(self, get_frame_func, frame_list):
         frames = []
         for frame_str in frame_list:
             row_col = frame_str.split(':')
             if len(row_col) == 2:
-                row = int(row_col[0])
-                col = int(row_col[1])
-                frames.append(get_frame_func(row, col))
+                try:
+                    row = int(row_col[0])
+                    col = int(row_col[1])
+                    frames.append(get_frame_func(row, col))
+                except ValueError:
+                    print(f"Incorrect frame format: {frame_str}")
         return frames
 
     def load_sound(self):

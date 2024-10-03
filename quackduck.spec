@@ -10,6 +10,7 @@ a = Analysis(['quackduck.py'],
                  ('./heart.png', '.'),
                  ('./wuak.mp3', '.'),
                  ('./duck_icon.png', '.'),
+                 ('./default_config.json', '.'),
              ],
              hiddenimports=['pygame'],  # Include pygame in hidden imports
              hookspath=[],
