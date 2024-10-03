@@ -51,8 +51,8 @@ To run QuackDuck on your system, follow these steps:
 
 ## Features Roadmap
 
-- [+] Add multi-duck support.
-- [+] Add more animations and actions for the duck.
+- [x] Add multi-duck support.
+- [x] Add more animations and actions for the duck.
 - [ ] Enable the duck to interact with other desktop elements.
 - [ ] Introduce mini-games with the duck.
 
@@ -62,7 +62,7 @@ The **"SKINS ARE HERE"** folder contains several pre-made skins that you can imm
 
 ## License
 
-This project is licensed under the [LicenseName] License. See the [LICENSE](./License) file for details.
+This project is licensed under the License. See the [LICENSE](./License) file for details.
 
 ## Contribution
 
