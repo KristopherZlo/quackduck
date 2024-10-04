@@ -1,34 +1,61 @@
+# Standard library imports
 import sys
 import threading
 import time
 import random
-import numpy as np
 import os
 import traceback
-from PyQt5 import QtWidgets, QtGui, QtCore
-import pyaudio
-import sounddevice as sd
-from PyQt5.QtWidgets import QMessageBox
-from PyQt5.QtCore import QSettings
 import zipfile
 import json
 import tempfile
 import shutil
 import webbrowser
+import urllib.request
+import platform
+import urllib.request
+import shutil
+import zipfile
+import subprocess
+import requests
+from pathlib import Path
 
-PROJECT_VERSION = "1.3.0"  # Project version
+# Third-party imports
+import numpy as np
+from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtCore import QSettings, pyqtSignal, QThread
+import pygame
+import pyaudio
+import sounddevice as sd
+
+# Local imports
+# (None in this case)
+
+PROJECT_VERSION = "1.3.1"  # Project version
 
 # Global exception handler
 def exception_handler(exctype, value, tb):
     error_message = ''.join(traceback.format_exception(exctype, value, tb))
-    crash_log_path = os.path.join(os.path.expanduser('~'), 'crash.log')
+    crash_log_path = Path(os.path.expanduser('~')) / 'crash.log'
+
+    # Collect system information
+    system_info = f"System Information:\n" \
+                  f"OS: {platform.system()} {platform.release()} ({platform.version()})\n" \
+                  f"Machine: {platform.machine()}\n" \
+                  f"Processor: {platform.processor()}\n" \
+                  f"Python Version: {platform.python_version()}\n\n"
+
+    # Write to crash log
     with open(crash_log_path, 'w') as f:
+        f.write(system_info)
         f.write(error_message)
+
+    # Show error message to user
     msg = QMessageBox()
     msg.setIcon(QMessageBox.Critical)
     msg.setWindowTitle("Yikes!")
     msg.setText(f"One of the critters tripped! :(\nError: {value}")
-    msg.setDetailedText(error_message)
+    msg.setDetailedText(system_info + error_message)
     msg.exec_()
     sys.exit(1)
 
@@ -36,8 +63,8 @@ sys.excepthook = exception_handler
 
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and PyInstaller"""
-    base_path = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base_path, relative_path)
+    base_path = getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)
+    return Path(base_path) / relative_path
 
 class HeartWindow(QtWidgets.QWidget):
     def __init__(self, x, y):
@@ -57,7 +84,7 @@ class HeartWindow(QtWidgets.QWidget):
         self.dx = random.uniform(-20, 20)
         self.dy = random.uniform(-50, -100)
 
-        self.image = QtGui.QPixmap(resource_path("heart.png")).scaled(
+        self.image = QtGui.QPixmap(str(resource_path("heart.png"))).scaled(
             int(self.size),
             int(self.size),
             QtCore.Qt.KeepAspectRatio,
@@ -94,12 +121,65 @@ class HeartWindow(QtWidgets.QWidget):
         self.move(int(self.x), int(self.y))
         self.update()
 
+class MicrophoneListener(QThread):
+    # Signal to emit the current volume
+    volume_signal = pyqtSignal(int)
+
+    def __init__(self, input_device_index, mic_sensitivity):
+        super().__init__()
+        self.input_device_index = input_device_index
+        self.mic_sensitivity = mic_sensitivity
+        self.running = True
+
+    def run(self):
+        """Thread entry point."""
+        CHUNK = 1024
+        RATE = 44100
+        p = pyaudio.PyAudio()
+
+        while self.running:
+            try:
+                stream = p.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=RATE,
+                    input=True,
+                    input_device_index=self.input_device_index,
+                    frames_per_buffer=CHUNK,
+                )
+            except Exception as e:
+                print("Microphone access error:", e)
+                time.sleep(1)
+                continue
+
+            while self.running:
+                data = np.frombuffer(
+                    stream.read(CHUNK, exception_on_overflow=False), dtype=np.int16
+                )
+                volume = np.linalg.norm(data) / CHUNK
+                volume = volume * 100  # Increase sensitivity
+                volume = min(int((volume / 32768) * 100), 100)  # Normalize volume
+                self.volume_signal.emit(volume)
+                time.sleep(0.01)
+
+            stream.stop_stream()
+            stream.close()
+
+        p.terminate()
+
+    def stop(self):
+        """Stop the thread."""
+        self.running = False
+
 class DuckWidget(QtWidgets.QWidget):
+    # Signal to update the microphone volume
+    volume_updated = pyqtSignal(int)
+
     def __init__(self):
         super().__init__()
 
         # Initializing QSettings and other parameters
-        self.settings = QSettings('zl0yxp', 'QuackDuck')
+        self.settings = QSettings()
 
         self.setWindowFlags(
             QtCore.Qt.FramelessWindowHint
@@ -132,7 +212,6 @@ class DuckWidget(QtWidgets.QWidget):
         self.sleep_stage = 0
         self.landed = False
         self.is_stuck = False
-        self.restart_audio_stream = False
 
         # Initialize missing attribute
         self.is_jumping = False
@@ -149,6 +228,11 @@ class DuckWidget(QtWidgets.QWidget):
         self.load_settings()
 
         self.current_volume = 0  # Current microphone volume level
+
+        # Initialize microphone listener thread
+        self.microphone_listener = MicrophoneListener(self.selected_input_device_index, self.mic_sensitivity)
+        self.microphone_listener.volume_signal.connect(self.on_volume_updated)
+        self.microphone_listener.start()
 
         # Defining the default animation configuration
         self.default_animations_config = {
@@ -212,15 +296,164 @@ class DuckWidget(QtWidgets.QWidget):
         self.pause_timer.timeout.connect(self.toggle_pause)
         self.reset_pause_timer()
 
-        self.audio_thread = threading.Thread(target=self.listen_microphone)
-        self.audio_thread.daemon = True
-        self.audio_thread.start()
-
         self.resize(self.current_frame.size())
 
         self.show()
 
         self.move(int(self.duck_x), int(self.duck_y))
+
+    def reset_settings_to_default(self):
+        # Remove custom skin files if any
+        skins_dir = os.path.join(os.path.expanduser('~'), '.quackduck_skins')
+        if os.path.exists(skins_dir):
+            shutil.rmtree(skins_dir)
+
+        # Установка значений по умолчанию
+        self.mic_sensitivity = 10
+        self.floor_level = 40
+        self.floor_default = True
+        self.scale_factor = 3
+        self.sound_enabled = True
+        self.selected_input_device_index = self.input_devices[0][0] if self.input_devices else None
+        self.autostart_enabled = self.check_autostart()
+        self.duck_stuck_bug = True
+        self.custom_skin_path = None  # Сбросить пользовательскую тему
+
+        # Удалить атрибуты, связанные с пользовательским скином
+        if hasattr(self, 'sound_file'):
+            del self.sound_file
+        if hasattr(self, 'spritesheet_path'):
+            del self.spritesheet_path
+        if hasattr(self, 'frame_width'):
+            del self.frame_width
+        if hasattr(self, 'frame_height'):
+            del self.frame_height
+
+        # Сбросить скин к стандартному
+        self.animations_config = self.default_animations_config
+        self.load_sprites()
+        self.load_sound()
+
+        # Сохранить настройки по умолчанию
+        self.save_settings()
+
+    def update_application(self):
+        current_version = PROJECT_VERSION
+        try:
+            url = "https://api.github.com/repos/KristopherZlo/quackduck/releases/latest"
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+                latest_version = data['tag_name'].lstrip('v')
+                if latest_version > current_version:
+                    download_url = None
+                    archive_name = None
+                    # Ищем только .zip архивы
+                    for asset in data['assets']:
+                        if asset['name'].endswith('.zip'):
+                            download_url = asset['browser_download_url']
+                            archive_name = asset['name']
+                            break
+                    if download_url:
+                        # Скачиваем архив
+                        temp_archive_path = os.path.join(tempfile.gettempdir(), archive_name)
+                        with requests.get(download_url, stream=True) as r:
+                            with open(temp_archive_path, 'wb') as f:
+                                shutil.copyfileobj(r.raw, f)
+                        # Распаковываем .zip архив
+                        extracted_path = os.path.join(tempfile.gettempdir(), "quackduck_update")
+                        if os.path.exists(extracted_path):
+                            shutil.rmtree(extracted_path)
+                        os.makedirs(extracted_path)
+                        with zipfile.ZipFile(temp_archive_path, 'r') as zip_ref:
+                            zip_ref.extractall(extracted_path)
+                        # Получаем путь к 'updater.exe'
+                        updater_exe_source = resource_path('updater.exe')
+                        # Копируем 'updater.exe' в extracted_path
+                        updater_exe_path = os.path.join(extracted_path, 'updater.exe')
+                        shutil.copy2(updater_exe_source, updater_exe_path)
+                        # Запускаем updater и выходим
+                        subprocess.Popen([updater_exe_path, os.getcwd(), extracted_path])
+                        # Информируем пользователя
+                        QMessageBox.information(
+                            self,
+                            "Update",
+                            f"The app is being updated to version {latest_version}. It will be restarted after the update is complete.",
+                            QMessageBox.Ok
+                        )
+                        # Выходим из приложения
+                        QtWidgets.qApp.quit()
+                    else:
+                        QMessageBox.information(
+                            self,
+                            "Update",
+                            "There is no .zip archive in the latest release. Please wait for the next update.",
+                            QMessageBox.Ok
+                        )
+                else:
+                    QMessageBox.information(
+                        self,
+                        "Update",
+                        "You are using the latest version.",
+                        QMessageBox.Ok
+                    )
+            else:
+                QMessageBox.warning(self, "Error", f"Failed to check for updates: HTTP {response.status_code}")
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Error",
+                f"Failed to update the application: {e}",
+                QMessageBox.Ok
+            )
+
+    def replace_files(self, extracted_path):
+        try:
+            # Определяем пути к файлам
+            app_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+            internal_folder = os.path.join(app_dir, "_internal")
+            exe_file = os.path.join(app_dir, "quackduck.exe")
+
+            # Удаляем старые файлы
+            if os.path.exists(internal_folder):
+                shutil.rmtree(internal_folder)
+            if os.path.exists(exe_file):
+                os.remove(exe_file)
+
+            # Копируем новые файлы
+            new_internal_folder = os.path.join(extracted_path, "_internal")
+            new_exe_file = os.path.join(extracted_path, "quackduck.exe")
+
+            if os.path.exists(new_internal_folder):
+                shutil.copytree(new_internal_folder, internal_folder)
+            else:
+                QMessageBox.warning(self, "Error", "New '_internal' folder not found in the archive.")
+
+            if os.path.exists(new_exe_file):
+                shutil.copy2(new_exe_file, exe_file)
+            else:
+                QMessageBox.warning(self, "Error", "New 'quackduck.exe' not found in the archive.")
+
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Error",
+                f"Failed to replace files: {e}",
+                QMessageBox.Ok
+            )
+
+    def on_volume_updated(self, volume):
+        """Slot to handle volume updates from the microphone listener."""
+        self.current_volume = volume
+        if volume > self.mic_sensitivity:
+            self.is_listening = True
+            self.last_sound_time = time.time()
+
+    def closeEvent(self, event):
+        """Override the closeEvent to properly terminate threads."""
+        self.microphone_listener.stop()
+        self.microphone_listener.wait()
+        super().closeEvent(event)
 
     def get_input_devices(self):
         input_devices = []
@@ -240,15 +473,23 @@ class DuckWidget(QtWidgets.QWidget):
 
     def load_settings(self):
         # Load settings or set default values
+        self.settings.beginGroup('Audio')
         self.mic_sensitivity = self.settings.value('mic_sensitivity', 10, type=int)
+        self.selected_input_device_index = self.settings.value('selected_input_device_index', None, type=int)
+        self.settings.endGroup()
+
+        self.settings.beginGroup('Appearance')
         self.floor_level = self.settings.value('floor_level', 40, type=int)
         self.floor_default = self.settings.value('floor_default', True, type=bool)
         self.scale_factor = self.settings.value('scale_factor', 3, type=int)
+        self.custom_skin_path = self.settings.value('custom_skin_path', '', type=str) or None
+        self.settings.endGroup()
+
+        self.settings.beginGroup('Behavior')
         self.sound_enabled = self.settings.value('sound_enabled', True, type=bool)
-        self.selected_input_device_index = self.settings.value('selected_input_device_index', None, type=int)
         self.autostart_enabled = self.settings.value('autostart_enabled', self.check_autostart(), type=bool)
         self.duck_stuck_bug = self.settings.value('duck_stuck_bug', True, type=bool)
-        self.custom_skin_path = self.settings.value('custom_skin_path', '', type=str) or None
+        self.settings.endGroup()
 
         # If no microphone is selected, select the first available one
         if self.selected_input_device_index is None and self.input_devices:
@@ -256,27 +497,44 @@ class DuckWidget(QtWidgets.QWidget):
 
     def save_settings(self):
         # Saving settings
+        self.settings.beginGroup('Audio')
         self.settings.setValue('mic_sensitivity', self.mic_sensitivity)
+        self.settings.setValue('selected_input_device_index', self.selected_input_device_index)
+        self.settings.endGroup()
+
+        self.settings.beginGroup('Appearance')
         self.settings.setValue('floor_level', self.floor_level)
         self.settings.setValue('floor_default', self.floor_default)
         self.settings.setValue('scale_factor', self.scale_factor)
+        self.settings.setValue('custom_skin_path', self.custom_skin_path or '')
+        self.settings.endGroup()
+
+        self.settings.beginGroup('Behavior')
         self.settings.setValue('sound_enabled', self.sound_enabled)
-        self.settings.setValue('selected_input_device_index', self.selected_input_device_index)
         self.settings.setValue('autostart_enabled', self.autostart_enabled)
         self.settings.setValue('duck_stuck_bug', self.duck_stuck_bug)
-        self.settings.setValue('custom_skin_path', self.custom_skin_path or '')
+        self.settings.endGroup()
 
     def load_skin(self, zip_path):
         try:
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                temp_dir = os.path.join(tempfile.gettempdir(), 'quackduck_skin')
-                if os.path.exists(temp_dir):
-                    shutil.rmtree(temp_dir)
-                os.makedirs(temp_dir)
-                zip_ref.extractall(temp_dir)
+            # Determine a persistent directory to store skins
+            skins_dir = os.path.join(os.path.expanduser('~'), '.quackduck_skins')
+            if not os.path.exists(skins_dir):
+                os.makedirs(skins_dir)
 
-            # Loading JSON configuration
-            json_path = os.path.join(temp_dir, 'config.json')
+            # Extract the skin to a unique directory inside skins_dir
+            skin_name = os.path.splitext(os.path.basename(zip_path))[0]
+            skin_dir = os.path.join(skins_dir, skin_name)
+
+            # If the skin directory already exists, remove it
+            if os.path.exists(skin_dir):
+                shutil.rmtree(skin_dir)
+
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(skin_dir)
+
+            # Load configuration
+            json_path = os.path.join(skin_dir, 'config.json')
             if not os.path.exists(json_path):
                 QMessageBox.warning(self, "Error", "The config.json file is missing from the skin.")
                 return False
@@ -284,22 +542,15 @@ class DuckWidget(QtWidgets.QWidget):
             with open(json_path, 'r') as f:
                 config = json.load(f)
 
-            # Checking if all required fields are present
-            required_fields = ["spritesheet", "sound", "frame_width", "frame_height", "animations"]
-            for field in required_fields:
-                if field not in config:
-                    QMessageBox.warning(self, "Error", f"Missing field '{field}' in config.json.")
-                    return False
-
-            # Reading configuration
+            # Read configuration
             spritesheet_name = config.get('spritesheet')
             sound_name = config.get('sound')
             frame_width = config.get('frame_width')
             frame_height = config.get('frame_height')
             animations = config.get('animations', {})
 
-            spritesheet_path = os.path.join(temp_dir, spritesheet_name)
-            sound_path = os.path.join(temp_dir, sound_name)
+            spritesheet_path = os.path.join(skin_dir, spritesheet_name)
+            sound_path = os.path.join(skin_dir, sound_name)
 
             if not os.path.exists(spritesheet_path):
                 QMessageBox.warning(self, "Error", f"Sprite sheet file '{spritesheet_name}' not found.")
@@ -309,8 +560,7 @@ class DuckWidget(QtWidgets.QWidget):
                 QMessageBox.warning(self, "Error", f"Sound file '{sound_name}' not found.")
                 return False
 
-            # Updating paths and configurations
-            self.custom_skin_dir = temp_dir
+            # Update paths and configurations
             self.spritesheet_path = spritesheet_path
             self.sound_file = sound_path
             self.frame_width = frame_width
@@ -331,12 +581,12 @@ class DuckWidget(QtWidgets.QWidget):
 
     def load_sprites(self):
         if hasattr(self, 'spritesheet_path'):
-            spritesheet = QtGui.QPixmap(self.spritesheet_path)
+            spritesheet = QtGui.QPixmap(str(self.spritesheet_path))
             frame_width = self.frame_width
             frame_height = self.frame_height
         else:
             # Standard behavior
-            spritesheet = QtGui.QPixmap(resource_path('ducky_spritesheet.png'))
+            spritesheet = QtGui.QPixmap(str(resource_path('ducky_spritesheet.png')))
             frame_width = 32
             frame_height = 32
 
@@ -403,10 +653,12 @@ class DuckWidget(QtWidgets.QWidget):
         return frames
 
     def load_sound(self):
-        if hasattr(self, 'sound_file'):
-            self.sound_file = self.sound_file
+        if hasattr(self, 'sound_file') and os.path.exists(str(self.sound_file)):
+            sound_file_path = str(self.sound_file)
         else:
-            self.sound_file = resource_path("wuak.mp3")
+            sound_file_path = str(resource_path("wuak.mp3"))
+        pygame.mixer.init()
+        self.sound = pygame.mixer.Sound(sound_file_path)
 
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
@@ -653,47 +905,6 @@ class DuckWidget(QtWidgets.QWidget):
             self.sleep_timer = None
             self.sleep_stage = 0
 
-    def listen_microphone(self):
-        CHUNK = 1024
-        RATE = 44100
-        p = pyaudio.PyAudio()
-
-        while True:
-            try:
-                stream = p.open(
-                    format=pyaudio.paInt16,
-                    channels=1,
-                    rate=RATE,
-                    input=True,
-                    input_device_index=self.selected_input_device_index,
-                    frames_per_buffer=CHUNK,
-                )
-            except Exception as e:
-                print("Microphone access error:", e)
-                time.sleep(1)
-                continue
-
-            while True:
-                if self.restart_audio_stream:
-                    stream.stop_stream()
-                    stream.close()
-                    self.restart_audio_stream = False
-                    break
-
-                data = np.frombuffer(
-                    stream.read(CHUNK, exception_on_overflow=False), dtype=np.int16
-                )
-                volume = np.linalg.norm(data) / CHUNK
-                volume = volume * 100  # Increase sensitivity
-                self.current_volume = min(int((volume / 32768) * 100), 100)  # Normalize volume
-                if volume > self.mic_sensitivity * 100:  # Microphone sensitivity
-                    self.is_listening = True
-                    self.last_sound_time = time.time()
-                time.sleep(0.01)
-
-    def get_current_volume(self):
-        return self.current_volume
-
     def change_direction(self):
         if self.on_ground and not self.dragging and not self.is_stuck:
             self.duck_direction *= -1
@@ -705,29 +916,15 @@ class DuckWidget(QtWidgets.QWidget):
 
     def play_sound(self):
         if not self.is_sleeping and self.sound_enabled:
-            try:
-                from pygame import mixer
-
-                mixer.init()
-                mixer.music.load(self.sound_file)
-                mixer.music.play()
-            except ImportError:
-                print("Install pygame library to play sound.")
+            self.sound.play()
         self.reset_sound_timer()
 
     def play_sound_immediately(self):
         if not self.is_sleeping and self.sound_enabled:
-            try:
-                from pygame import mixer
-
-                mixer.init()
-                mixer.music.load(self.sound_file)
-                mixer.music.play()
-            except ImportError:
-                print("Install pygame library to play sound.")
+            self.sound.play()
 
     def reset_sound_timer(self):
-        interval = random.randint(120000, 500000)
+        interval = random.randint(120000, 600000)
         self.sound_timer.start(interval)
 
     def toggle_pause(self):
@@ -834,7 +1031,9 @@ class DuckWidget(QtWidgets.QWidget):
             winreg.CloseKey(reg_key)
             self.autostart_enabled = True
             # Save setting
+            self.settings.beginGroup('Behavior')
             self.settings.setValue('autostart_enabled', True)
+            self.settings.endGroup()
         except Exception as e:
             print(f"Failed to enable autostart: {e}")
 
@@ -849,7 +1048,9 @@ class DuckWidget(QtWidgets.QWidget):
             winreg.CloseKey(reg_key)
             self.autostart_enabled = False
             # Save setting
+            self.settings.beginGroup('Behavior')
             self.settings.setValue('autostart_enabled', False)
+            self.settings.endGroup()
         except Exception:
             pass
 
@@ -869,6 +1070,10 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
 
         about_action = menu.addAction("👋 About")
         about_action.triggered.connect(self.show_about)
+
+        # Add 'Check for Updates' option
+        check_updates_action = menu.addAction("🔄 Check for Updates")
+        check_updates_action.triggered.connect(self.check_for_updates)
 
         menu.addSeparator()
 
@@ -890,6 +1095,9 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
 
         self.setContextMenu(menu)
         self.activated.connect(self.icon_activated)
+
+    def check_for_updates(self):
+        self.window.update_application()
 
     def open_coffee_link(self):
         webbrowser.open("https://buymeacoffee.com/zl0yxp")
@@ -1035,6 +1243,9 @@ class SettingsWindow(QtWidgets.QDialog):
         save_button.clicked.connect(self.save_settings)
         cancel_button = QtWidgets.QPushButton("Cancel")
         cancel_button.clicked.connect(self.close)
+        reset_button = QtWidgets.QPushButton("Reset to Default")
+        reset_button.clicked.connect(self.reset_to_default)
+        buttons_layout.addWidget(reset_button)
         buttons_layout.addStretch()
         buttons_layout.addWidget(save_button)
         buttons_layout.addWidget(cancel_button)
@@ -1070,6 +1281,24 @@ class SettingsWindow(QtWidgets.QDialog):
         self.preview_thread.daemon = True
         self.preview_thread.start()
 
+    def reset_to_default(self):
+        # Сброс настроек в родительском виджете
+        self.parent.reset_settings_to_default()
+        
+        # Обновление элементов UI, чтобы отобразить значения по умолчанию
+        self.populate_microphones()
+        self.sensitivity_slider.setValue(self.parent.mic_sensitivity)
+        self.floor_spinbox.setValue(self.parent.floor_level)
+        self.floor_default_checkbox.setChecked(self.parent.floor_default)
+        self.floor_spinbox.setDisabled(self.parent.floor_default)
+        self.size_combo.setCurrentIndex(self.size_combo.findData(self.parent.scale_factor))
+        self.sound_checkbox.setChecked(self.parent.sound_enabled)
+        self.autostart_checkbox.setChecked(self.parent.autostart_enabled)
+        self.duck_stuck_checkbox.setChecked(self.parent.duck_stuck_bug)
+        
+        # Опционально, показать сообщение о сбросе
+        QMessageBox.information(self, "Settings Reset", "Settings have been reset to default values.")
+
     def open_coffee_link(self):
         webbrowser.open("https://buymeacoffee.com/zl0yxp")
 
@@ -1093,9 +1322,9 @@ class SettingsWindow(QtWidgets.QDialog):
 
     def mic_preview(self):
         while self.preview_thread_running:
-            volume = self.parent.get_current_volume()
+            volume = self.parent.current_volume
             if volume is not None:
-                volume = min(volume * 10, 100)
+                volume = min(volume, 100)
                 self.sensitivity_preview.setValue(int(volume))
             time.sleep(0.1)
 
@@ -1127,7 +1356,12 @@ class SettingsWindow(QtWidgets.QDialog):
     def save_settings(self):
         # Save microphone selection
         self.parent.selected_input_device_index = self.mic_combo.currentData()
-        self.parent.restart_audio_stream = True
+        # Restart the microphone listener thread
+        self.parent.microphone_listener.stop()
+        self.parent.microphone_listener.wait()
+        self.parent.microphone_listener = MicrophoneListener(self.parent.selected_input_device_index, self.parent.mic_sensitivity)
+        self.parent.microphone_listener.volume_signal.connect(self.parent.on_volume_updated)
+        self.parent.microphone_listener.start()
 
         # Save microphone sensitivity
         self.parent.mic_sensitivity = self.sensitivity_slider.value()
@@ -1193,6 +1427,10 @@ def main():
     # Initialize application
     app = QtWidgets.QApplication(sys.argv)
 
+    # Set organization and application names for QSettings
+    app.setOrganizationName("zl0yxp")
+    app.setApplicationName("QuackDuck")
+
     # Apply dark theme
     app.setStyle("Fusion")
     dark_palette = QtGui.QPalette()
@@ -1212,11 +1450,11 @@ def main():
 
     try:
         icon_path = resource_path("duck_icon.png")
-        app.setWindowIcon(QtGui.QIcon(icon_path))
+        app.setWindowIcon(QtGui.QIcon(str(icon_path)))
 
         duck_widget = DuckWidget()
 
-        tray_icon = SystemTrayIcon(QtGui.QIcon(icon_path), duck_widget)
+        tray_icon = SystemTrayIcon(QtGui.QIcon(str(icon_path)), duck_widget)
         tray_icon.show()
 
         duck_widget.show()
