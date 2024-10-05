@@ -31,7 +31,7 @@ import sounddevice as sd
 # Local imports
 # (None in this case)
 
-PROJECT_VERSION = "1.3.1"  # Project version
+PROJECT_VERSION = "1.3.2"  # Project version
 
 # Global exception handler
 def exception_handler(exctype, value, tb):
@@ -207,11 +207,13 @@ class DuckWidget(QtWidgets.QWidget):
         self.last_sound_time = time.time()
         self.on_ground = False
         self.vertical_speed = 10
+        self.current_idle_animation = []
         self.is_paused = False
         self.sleep_timer = None
         self.sleep_stage = 0
         self.landed = False
         self.is_stuck = False
+        self.is_landing = False
 
         # Initialize missing attribute
         self.is_jumping = False
@@ -320,6 +322,8 @@ class DuckWidget(QtWidgets.QWidget):
         self.custom_skin_path = None  # Сбросить пользовательскую тему
 
         # Удалить атрибуты, связанные с пользовательским скином
+        if hasattr(self, 'sound_files'):
+            del self.sound_files
         if hasattr(self, 'sound_file'):
             del self.sound_file
         if hasattr(self, 'spritesheet_path'):
@@ -328,11 +332,25 @@ class DuckWidget(QtWidgets.QWidget):
             del self.frame_width
         if hasattr(self, 'frame_height'):
             del self.frame_height
+        if hasattr(self, 'animations_config'):
+            del self.animations_config
 
         # Сбросить скин к стандартному
         self.animations_config = self.default_animations_config
         self.load_sprites()
         self.load_sound()
+
+        # Обновляем current_idle_animation
+        self.current_idle_animation = random.choice(list(self.idle_animations.values()))
+        self.idle_frame_index = 0
+
+        if self.duck_direction < 0:
+            self.current_frame = self.current_idle_animation[0].transformed(
+                QtGui.QTransform().scale(-1, 1)
+            )
+        else:
+            self.current_frame = self.current_idle_animation[0]
+        self.update()
 
         # Сохранить настройки по умолчанию
         self.save_settings()
@@ -517,66 +535,89 @@ class DuckWidget(QtWidgets.QWidget):
 
     def load_skin(self, zip_path):
         try:
-            # Determine a persistent directory to store skins
+            # Определяем постоянный каталог для хранения скинов
             skins_dir = os.path.join(os.path.expanduser('~'), '.quackduck_skins')
             if not os.path.exists(skins_dir):
                 os.makedirs(skins_dir)
 
-            # Extract the skin to a unique directory inside skins_dir
+            # Распаковываем скин в уникальную директорию внутри skins_dir
             skin_name = os.path.splitext(os.path.basename(zip_path))[0]
             skin_dir = os.path.join(skins_dir, skin_name)
 
-            # If the skin directory already exists, remove it
+            # Если директория скина уже существует, удаляем её
             if os.path.exists(skin_dir):
                 shutil.rmtree(skin_dir)
 
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(skin_dir)
 
-            # Load configuration
+            # Загружаем конфигурацию
             json_path = os.path.join(skin_dir, 'config.json')
             if not os.path.exists(json_path):
-                QMessageBox.warning(self, "Error", "The config.json file is missing from the skin.")
+                QMessageBox.warning(self, "Error", "Файл config.json отсутствует в скине.")
                 return False
 
             with open(json_path, 'r') as f:
                 config = json.load(f)
 
-            # Read configuration
+            # Чтение конфигурации
             spritesheet_name = config.get('spritesheet')
-            sound_name = config.get('sound')
+            sound_names = config.get('sound')
             frame_width = config.get('frame_width')
             frame_height = config.get('frame_height')
             animations = config.get('animations', {})
 
             spritesheet_path = os.path.join(skin_dir, spritesheet_name)
-            sound_path = os.path.join(skin_dir, sound_name)
 
             if not os.path.exists(spritesheet_path):
-                QMessageBox.warning(self, "Error", f"Sprite sheet file '{spritesheet_name}' not found.")
+                QMessageBox.warning(self, "Error", f"Файл спрайтов '{spritesheet_name}' не найден.")
                 return False
 
-            if not os.path.exists(sound_path):
-                QMessageBox.warning(self, "Error", f"Sound file '{sound_name}' not found.")
+            if not sound_names:
+                QMessageBox.warning(self, "Error", "Звуковой файл(ы) не указан.")
                 return False
 
-            # Update paths and configurations
+            if isinstance(sound_names, str):
+                sound_names = [sound_names]  # Преобразуем в список, если указан один файл
+
+            sound_paths = []
+            for sound_name in sound_names:
+                sound_path = os.path.join(skin_dir, sound_name)
+                if not os.path.exists(sound_path):
+                    QMessageBox.warning(self, "Error", f"Звуковой файл '{sound_name}' не найден.")
+                    return False
+                sound_paths.append(sound_path)
+
+            # Обновляем пути и конфигурации
             self.spritesheet_path = spritesheet_path
-            self.sound_file = sound_path
+            self.sound_files = sound_paths
             self.frame_width = frame_width
             self.frame_height = frame_height
             self.animations_config = animations
 
-            self.custom_skin_path = zip_path  # Save path to skin
+            self.custom_skin_path = zip_path  # Сохраняем путь к скину
 
-            # Reload sprites and sound
+            # Перезагружаем спрайты и звуки
             self.load_sprites()
             self.load_sound()
 
+            # Если утка находится в состоянии idle, обновляем current_idle_animation
+            if self.is_paused:
+                self.current_idle_animation = random.choice(list(self.idle_animations.values()))
+                self.idle_frame_index = 0
+
+                if self.duck_direction < 0:
+                    self.current_frame = self.current_idle_animation[0].transformed(
+                        QtGui.QTransform().scale(-1, 1)
+                    )
+                else:
+                    self.current_frame = self.current_idle_animation[0]
+                self.update()
+
             return True
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"Failed to load skin: {e}")
-            print(f"Failed to load skin: {e}")
+            QMessageBox.warning(self, "Error", f"Не удалось загрузить скин: {e}")
+            print(f"Не удалось загрузить скин: {e}")
             return False
 
     def load_sprites(self):
@@ -585,7 +626,7 @@ class DuckWidget(QtWidgets.QWidget):
             frame_width = self.frame_width
             frame_height = self.frame_height
         else:
-            # Standard behavior
+            # Стандартное поведение
             spritesheet = QtGui.QPixmap(str(resource_path('ducky_spritesheet.png')))
             frame_width = 32
             frame_height = 32
@@ -604,40 +645,76 @@ class DuckWidget(QtWidgets.QWidget):
             )
             return frame
 
-        if hasattr(self, 'animations_config'):
-            # Loading animations based on configuration
-            self.idle_frames = self.get_animation_frames(get_frame, self.animations_config.get('idle', []))
-            self.walk_frames = self.get_animation_frames(get_frame, self.animations_config.get('walk', []))
-            self.listen_frames = self.get_animation_frames(get_frame, self.animations_config.get('listen', []))
-            self.fall_frames = self.get_animation_frames(get_frame, self.animations_config.get('fall', []))
-            self.jump_frames = self.get_animation_frames(get_frame, self.animations_config.get('jump', []))
-            self.sleep_frames = self.get_animation_frames(get_frame, self.animations_config.get('sleep', []))
-            self.sleep_transition_frames = self.get_animation_frames(get_frame, self.animations_config.get('sleep_transition', []))
-        else:
-            # Default animations if animations_config is not set
-            self.idle_frames = [get_frame(0, 0)]
-            self.walk_frames = [get_frame(1, i) for i in range(6)]
-            self.listen_frames = [get_frame(2, 1)]
-            self.fall_frames = [get_frame(2, 3)]
-            self.jump_frames = [get_frame(2, i) for i in range(4)]
-            self.sleep_frames = [get_frame(0, 1)]
-            self.sleep_transition_frames = [get_frame(2, 1)]
+        # Сбрасываем все атрибуты анимаций
+        self.walk_frames = []
+        self.idle_frames = []
+        self.jump_frames = []
+        self.fall_frames = []
+        self.land_frames = []
+        self.sleep_frames = []
+        self.sleep_transition_frames = []
+        self.listen_frames = []
+        self.idle_animations = {}
 
-        # Set current frame
-        if hasattr(self, 'fall_frames') and self.fall_frames:
+        # Загрузка анимаций на основе конфигурации
+        for anim_name, frame_list in self.animations_config.items():
+            frames = self.get_animation_frames(get_frame, frame_list)
+            if anim_name.startswith('idle'):
+                self.idle_animations[anim_name] = frames
+            elif anim_name == 'walk':
+                self.walk_frames = frames
+            elif anim_name == 'listen':
+                self.listen_frames = frames
+            elif anim_name == 'fall':
+                self.fall_frames = frames
+            elif anim_name == 'jump':
+                self.jump_frames = frames
+            elif anim_name == 'land':
+                self.land_frames = frames
+            elif anim_name == 'sleep':
+                self.sleep_frames = frames
+            elif anim_name == 'sleep_transition':
+                self.sleep_transition_frames = frames
+            # Добавить другие анимации при необходимости!!!!
+
+        # Для совместимости устанавливаем self.idle_frames
+        if 'idle' in self.idle_animations:
+            self.idle_frames = self.idle_animations['idle']
+        else:
+            # Если idle-анимации нет, используем первый кадр спрайт-листа
+            default_frame = get_frame(0, 0)
+            self.idle_animations['idle'] = [default_frame]
+            self.idle_frames = [default_frame]
+
+        # Устанавливаем текущий кадр
+        if self.fall_frames:
             self.current_frame = self.fall_frames[0]
-        elif hasattr(self, 'idle_frames') and self.idle_frames:
+        elif self.idle_frames:
             self.current_frame = self.idle_frames[0]
         else:
-            raise AttributeError("Failed to initialize animation frames.")
+            raise AttributeError("Не удалось инициализировать кадры анимации.")
 
-        # Initialize frame indices for animations
-        self.frame_index = 0  # For walking shots
-        self.jump_index = 0  # For jump shots
-        self.idle_frame_index = 0  # For idle frames
-        self.sleep_frame_index = 0  # For sleep shots
-        self.listen_frame_index = 0  # For listening frames
-        self.fall_frame_index = 0  # For fall frames
+        # Инициализируем индексы кадров для анимаций
+        self.frame_index = 0  # Для кадров ходьбы
+        self.jump_index = 0  # Для кадров прыжка
+        self.idle_frame_index = 0  # Для idle-кадров
+        self.sleep_frame_index = 0  # Для кадров сна
+        self.listen_frame_index = 0  # Для кадров прослушивания
+        self.fall_frame_index = 0  # Для кадров падения
+        self.land_frame_index = 0  # Для кадров приземления (LAND)
+
+        # Если утка находится в состоянии idle, обновляем current_idle_animation
+        if self.is_paused:
+            self.current_idle_animation = random.choice(list(self.idle_animations.values()))
+            self.idle_frame_index = 0
+
+            if self.duck_direction < 0:
+                self.current_frame = self.current_idle_animation[0].transformed(
+                    QtGui.QTransform().scale(-1, 1)
+                )
+            else:
+                self.current_frame = self.current_idle_animation[0]
+            self.update()
 
     def get_animation_frames(self, get_frame_func, frame_list):
         frames = []
@@ -653,12 +730,12 @@ class DuckWidget(QtWidgets.QWidget):
         return frames
 
     def load_sound(self):
-        if hasattr(self, 'sound_file') and os.path.exists(str(self.sound_file)):
-            sound_file_path = str(self.sound_file)
+        pygame.mixer.init()
+        if hasattr(self, 'sound_files') and self.sound_files:
+            self.sounds = [pygame.mixer.Sound(sound_file) for sound_file in self.sound_files]
         else:
             sound_file_path = str(resource_path("wuak.mp3"))
-        pygame.mixer.init()
-        self.sound = pygame.mixer.Sound(sound_file_path)
+            self.sounds = [pygame.mixer.Sound(sound_file_path)]
 
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
@@ -667,24 +744,50 @@ class DuckWidget(QtWidgets.QWidget):
 
     def update_animation(self):
         if self.is_jumping:
-            # Play jump animations
+            # Проигрываем анимацию прыжка один раз
             frames = self.jump_frames
-            frame = frames[self.jump_index % len(frames)]
+            if self.jump_index < len(frames):
+                frame = frames[self.jump_index]
+                self.jump_index += 1
+            else:
+                frame = frames[-1]  # Остаёмся на последнем кадре до приземления
             if self.duck_direction < 0:
                 frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
             self.current_frame = frame
-            self.jump_index += 1
-        elif not self.on_ground:
-            # Play fall animations
+        elif self.is_landing:
+            # Проверяем, есть ли кадры LAND анимации
+            if self.land_frames:
+                frames = self.land_frames
+                if self.land_frame_index < len(frames):
+                    frame = frames[self.land_frame_index]
+                    self.land_frame_index += 1
+                else:
+                    # После окончания анимации приземления, сбрасываем состояние
+                    self.is_landing = False
+                    self.land_frame_index = 0
+                    self.landed = True  # Отмечаем, что утка приземлилась
+                    return  # Выходим из метода, следующая анимация будет обработана на следующем цикле
+                if self.duck_direction < 0:
+                    frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
+                self.current_frame = frame
+            else:
+                # Если кадров нет, сбрасываем состояние приземления
+                self.is_landing = False
+                self.landed = True
+        elif not self.on_ground and not self.is_jumping:
+            # Анимация падения, проигрываем один раз и остаёмся на последнем кадре
             frames = self.fall_frames
-            frame = frames[self.fall_frame_index % len(frames)]
+            if self.fall_frame_index < len(frames):
+                frame = frames[self.fall_frame_index]
+                self.fall_frame_index += 1
+            else:
+                frame = frames[-1]  # Остаёмся на последнем кадре
             if self.duck_direction < 0:
                 frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
             self.current_frame = frame
-            self.fall_frame_index += 1
         elif self.is_playful:
-            # During playful state, only walk animations are played with accelerated speed
-            animation_speed = 50  # 2x speed
+            # Анимация бега в весёлом состоянии
+            animation_speed = 50  # Ускоренная анимация
             self.animation_timer.start(animation_speed)
             frames = self.walk_frames
             frame = frames[self.frame_index % len(frames)]
@@ -693,7 +796,7 @@ class DuckWidget(QtWidgets.QWidget):
             self.current_frame = frame
             self.frame_index += 1
         else:
-            # Normal animation handling
+            # Стандартные анимации
             animation_speed = 100
             self.animation_timer.start(animation_speed)
 
@@ -716,7 +819,12 @@ class DuckWidget(QtWidgets.QWidget):
                 self.current_frame = frame
                 self.listen_frame_index += 1
             elif self.is_paused:
-                frames = self.idle_frames
+                # Проверяем, инициализирована ли current_idle_animation
+                if not self.current_idle_animation:
+                    self.current_idle_animation = random.choice(list(self.idle_animations.values()))
+                    self.idle_frame_index = 0
+
+                frames = self.current_idle_animation
                 frame = frames[self.idle_frame_index % len(frames)]
                 if self.duck_direction < 0:
                     frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
@@ -736,35 +844,31 @@ class DuckWidget(QtWidgets.QWidget):
     def update_position(self):
         current_time = time.time()
 
-        # Check for playful state every 10 minutes
-        if not self.is_playful and current_time - self.last_playful_check > 600:  # Every 10 minutes
+        # Проверяем весёлое состояние каждые 10 минут
+        if not self.is_playful and current_time - self.last_playful_check > 600:
             self.last_playful_check = current_time
-            if random.random() < 0.1:  # 10% chance
+            if random.random() < 0.1:  # Шанс 10%
                 self.start_playful_state()
 
         if self.is_playful:
             if current_time - self.playful_start_time > self.playful_duration:
                 self.is_playful = False
-                self.has_jumped = False  # Reset jump flag when playful state ends
+                self.has_jumped = False  # Сброс флага прыжка при выходе из весёлого состояния
             else:
                 self.chase_cursor()
 
-                # Check if near cursor's X-coordinate to initiate jump
+                # Проверяем близость к курсору для прыжка
                 cursor_x = QtGui.QCursor.pos().x()
                 duck_center_x = self.duck_x + self.current_frame.width() / 2
                 distance_x = abs(cursor_x - duck_center_x)
 
                 if distance_x < 50 and self.on_ground and not self.has_jumped:
                     self.start_jump()
-                    self.has_jumped = True  # Prevent further jumps until the duck moves away
-
-                # Reset `has_jumped` if duck moves away from the cursor's X-coordinate
+                    self.has_jumped = True  # Предотвращаем повторные прыжки
                 elif distance_x >= 100:
                     self.has_jumped = False
         else:
-            # Existing behavior remains unchanged
-
-            # Check for sleep mode transition
+            # Проверка перехода в спящий режим
             if current_time - self.last_sound_time > 300:
                 if not self.is_sleeping and self.sleep_timer is None:
                     self.start_sleep_transition()
@@ -776,7 +880,7 @@ class DuckWidget(QtWidgets.QWidget):
                     self.sleep_stage = 0
                     self.is_paused = False
 
-            # Listening mode
+            # Режим прослушивания
             if self.is_listening:
                 if current_time - self.last_sound_time > 1:
                     self.is_listening = False
@@ -788,21 +892,31 @@ class DuckWidget(QtWidgets.QWidget):
                 self.duck_x = cursor_pos.x() - self.offset_x
                 self.duck_y = cursor_pos.y() - self.offset_y
                 self.on_ground = False
-            elif not self.on_ground:
+            elif not self.on_ground and not self.is_jumping:
+                # Обработка падения
+                if self.vertical_speed == 0:
+                    self.vertical_speed = 10  # Начальная скорость падения
+                    self.fall_frame_index = 0  # Сбрасываем индекс кадров падения
                 self.vertical_speed += 0.5
                 self.duck_y += self.vertical_speed
                 if self.duck_y >= self.get_floor_level():
                     self.duck_y = self.get_floor_level()
                     self.on_ground = True
-                    self.vertical_speed = 10
-                    self.landed = True
-            elif not self.is_listening and not self.is_sleeping and not self.is_paused and not self.is_jumping:
+                    self.vertical_speed = 0
+
+                    # Если есть LAND анимация, устанавливаем состояние приземления
+                    if self.land_frames:
+                        self.is_landing = True
+                        self.land_frame_index = 0
+                    else:
+                        self.landed = True  # Если нет LAND анимации, переходим в состояние landed
+            elif not self.is_listening and not self.is_sleeping and not self.is_paused and not self.is_jumping and not self.is_landing:
                 movement_speed = 2
                 if self.is_playful:
-                    movement_speed *= self.playful_speed_multiplier  # Double speed during playful state
+                    movement_speed *= self.playful_speed_multiplier  # Увеличиваем скорость в весёлом состоянии
                 self.duck_x += self.duck_direction * movement_speed
 
-                # Screen edge detection
+                # Проверка краёв экрана
                 if self.duck_x <= 10:
                     if self.duck_stuck_bug:
                         self.is_stuck = False
@@ -824,30 +938,37 @@ class DuckWidget(QtWidgets.QWidget):
                 else:
                     self.is_stuck = False
 
-        # Handle jumping
+        # Обработка прыжка
         if self.is_jumping:
             self.vertical_speed += 0.5
             self.duck_y += self.vertical_speed
             if self.duck_y >= self.get_floor_level():
                 self.duck_y = self.get_floor_level()
                 self.on_ground = True
-                self.is_jumping = False
+                self.is_jumping = False  # Сброс состояния прыжка
                 self.vertical_speed = 0
 
-        # Ensure the duck stays on the floor only if not jumping or falling
-        if self.is_playful and not self.is_jumping and self.on_ground:
-            self.duck_y = self.get_floor_level()
+                # Если есть LAND анимация, устанавливаем состояние приземления
+                if self.land_frames:
+                    self.is_landing = True
+                    self.land_frame_index = 0
+                else:
+                    self.landed = True  # Если нет LAND анимации, переходим в состояние landed
 
+        # Обновление позиции утки
         self.move(int(self.duck_x), int(self.duck_y))
 
     def start_playful_state(self):
+        if self.is_sleeping:
+            self.is_sleeping = False
+            self.last_sound_time = time.time()  # Сброс времени для предотвращения немедленного засыпания
         self.is_playful = True
         self.playful_start_time = time.time()
-        self.playful_duration = random.randint(20, 60)  # Duration between 20 to 60 seconds
-        self.playful_speed_multiplier = 2  # Speed multiplier for animations and movement
-        self.has_jumped = False  # Reset jump flag when entering playful state
+        self.playful_duration = random.randint(20, 60)  # Продолжительность от 20 до 60 секунд
+        self.playful_speed_multiplier = 2  # Множитель скорости для анимаций и движения
+        self.has_jumped = False  # Сбросить флаг прыжка при входе в весёлое состояние
 
-        # Ensure the duck is on the floor to prevent flying
+        # Убедитесь, что утка на полу, чтобы предотвратить полёты
         self.duck_y = self.get_floor_level()
         self.move(int(self.duck_x), int(self.duck_y))
 
@@ -915,13 +1036,15 @@ class DuckWidget(QtWidgets.QWidget):
         self.direction_timer.start(interval)
 
     def play_sound(self):
-        if not self.is_sleeping and self.sound_enabled:
-            self.sound.play()
+        if not self.is_sleeping and self.sound_enabled and self.sounds:
+            sound = random.choice(self.sounds)
+            sound.play()
         self.reset_sound_timer()
 
     def play_sound_immediately(self):
-        if not self.is_sleeping and self.sound_enabled:
-            self.sound.play()
+        if not self.is_sleeping and self.sound_enabled and self.sounds:
+            sound = random.choice(self.sounds)
+            sound.play()
 
     def reset_sound_timer(self):
         interval = random.randint(120000, 600000)
@@ -932,12 +1055,15 @@ class DuckWidget(QtWidgets.QWidget):
             self.is_paused = not self.is_paused
 
             if self.is_paused:
+                # Выбираем случайную idle-анимацию
+                self.current_idle_animation = random.choice(list(self.idle_animations.values()))
+                self.idle_frame_index = 0
                 if self.duck_direction < 0:
-                    self.current_frame = self.idle_frames[0].transformed(
+                    self.current_frame = self.current_idle_animation[0].transformed(
                         QtGui.QTransform().scale(-1, 1)
                     )
                 else:
-                    self.current_frame = self.idle_frames[0]
+                    self.current_frame = self.current_idle_animation[0]
                 self.update()
         self.reset_pause_timer()
 
@@ -952,15 +1078,21 @@ class DuckWidget(QtWidgets.QWidget):
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
             if self.is_playful:
-                self.is_playful = False  # Calm the pet
-                self.has_jumped = False  # Reset jump flag
+                self.is_playful = False  # Успокоить питомца
+                self.has_jumped = False  # Сбросить флаг прыжка
             else:
                 self.dragging = True
                 self.offset_x = event.pos().x()
                 self.offset_y = event.pos().y()
                 self.is_sleeping = False
                 self.last_sound_time = time.time()
+                if self.is_jumping:
+                    self.is_jumping = False
+                    self.vertical_speed = 0  # Сброс вертикальной скорости
         elif event.button() == QtCore.Qt.RightButton:
+            if self.is_sleeping:
+                self.is_sleeping = False
+                self.last_sound_time = time.time()  # Сброс времени для предотвращения немедленного засыпания
             self.start_jump()
 
     def mouseMoveEvent(self, event):
@@ -974,7 +1106,7 @@ class DuckWidget(QtWidgets.QWidget):
         if event.button() == QtCore.Qt.LeftButton:
             self.dragging = False
             self.on_ground = False
-            self.vertical_speed = 0
+            self.vertical_speed = 0  # Сброс вертикальной скорости
             self.landed = False
 
     def mouseDoubleClickEvent(self, event):
