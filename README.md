@@ -49,12 +49,53 @@ To run QuackDuck on your system, follow these steps:
 4. **Custom Skins**: Ready-to-use skins are located in the **"SKINS ARE HERE"** folder. You can apply these skins directly.
 5. **Settings**: Right-click the duck to open the settings menu, where you can adjust the duck’s size, sound preferences, and more.
 
-## Features Roadmap
+## Todo
 
-- [x] Add multi-duck support.
-- [x] Add more animations and actions for the duck.
-- [ ] Enable the duck to interact with other desktop elements.
-- [ ] Introduce mini-games with the duck.
+### Version 1.4.0
+
+### Debug:
+- ✅ Pet wakes up when jumping
+- ✅ Pet wakes up when entering "playful" state
+- ✅ Fixed jump animation / Removed infinite looping
+- ✅ Skins are not deleted from the user's folder
+
+### Visual:
+- ✅ Cursor changes to pointer when hovering over the pet
+- ✅ Cursor changes to pointer when hovering over menu buttons
+- 🛠 Display the pet's name when hovering over it
+
+### New attributes for skins:
+- ⁉️ Optional sleep sound
+- ✅ Ability to use multiple sounds (optional attribute)
+- 🛠 Climb attribute for allowing the pet to climb the edges of the screen
+- ⏳ Ability to add animations for the climb attribute
+- ⏳ Ability to spawn a sleeping bag for the pet if there is a corresponding sprite
+- ⏳ Ability to add a running animation (run + animation)
+- ⏳ Random event where the pet starts running instead of walking for a short time
+- ✅ Ability to add a falling animation (optional attribute)
+- ✅ Ability to add a landing animation (optional attribute)
+
+### Pet behavior and functionality:
+- ✅ Ability to set the pet's name
+- ✅ Play and sleep timing depends on the pet's name
+- ✅ Random actions in the "idle" state (e.g., cat licking)
+- ⏳ Support for random emoji events in clouds, showing that the pet is trying to talk
+- ⏳ Support for random emoji events during sleep
+- ⏳ Cursor attack animation if the cursor is moved around the pet for too long
+
+### Tasks in development:
+- ✅ New, more modern settings menu
+- ⏳ Debug menu to view pet attributes
+
+### Future development plans:
+- ⏳ Add support for Linux and macOS
+- ⏳ Develop a website for downloading skins
+- ⏳ Update the license file
+- ⏳ Create a list for function testing
+- ⏳ Add program information to "Properties"
+- ⏳ Update electronic signatures
+- ⁉️ Force the program to run as administrator
+- ⁉️ Create an installer with a desktop shortcut
 
 ## Pre-made Skins
 
