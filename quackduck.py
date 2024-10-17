@@ -409,12 +409,106 @@ class DuckWidget(QtWidgets.QWidget):
         self.sleep_timeout = (5 + self.random_gen.random() * 10) * 60  # in seconds
 
     def update_application(self):
-        # Existing code for updating the application
-        pass  # For brevity, omitted here
+        current_version = PROJECT_VERSION
+        try:
+            url = "https://api.github.com/repos/KristopherZlo/quackduck/releases/latest"
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+                latest_version = data['tag_name'].lstrip('v')
+                if latest_version > current_version:
+                    download_url = None
+                    archive_name = None
+                    # Ищем только .zip архивы
+                    for asset in data['assets']:
+                        if asset['name'].endswith('.zip'):
+                            download_url = asset['browser_download_url']
+                            archive_name = asset['name']
+                            break
+                    if download_url:
+                        # Скачиваем архив
+                        temp_archive_path = os.path.join(tempfile.gettempdir(), archive_name)
+                        with requests.get(download_url, stream=True) as r:
+                            with open(temp_archive_path, 'wb') as f:
+                                shutil.copyfileobj(r.raw, f)
+                        # Распаковываем .zip архив
+                        extracted_path = os.path.join(tempfile.gettempdir(), "quackduck_update")
+                        if os.path.exists(extracted_path):
+                            shutil.rmtree(extracted_path)
+                        os.makedirs(extracted_path)
+                        with zipfile.ZipFile(temp_archive_path, 'r') as zip_ref:
+                            zip_ref.extractall(extracted_path)
+                        # Получаем путь к 'updater.exe'
+                        updater_exe_source = resource_path('updater.exe')
+                        # Копируем 'updater.exe' в extracted_path
+                        updater_exe_path = os.path.join(extracted_path, 'updater.exe')
+                        shutil.copy2(updater_exe_source, updater_exe_path)
+                        # Запускаем updater и выходим
+                        subprocess.Popen([updater_exe_path, os.getcwd(), extracted_path])
+                        # Информируем пользователя
+                        QMessageBox.information(
+                            self,
+                            "Update",
+                            f"The app is being updated to version {latest_version}. It will be restarted after the update is complete.",
+                            QMessageBox.Ok
+                        )
+                        # Выходим из приложения
+                        QtWidgets.qApp.quit()
+                    else:
+                        QMessageBox.information(
+                            self,
+                            "Update",
+                            "There is no .zip archive in the latest release. Please wait for the next update.",
+                            QMessageBox.Ok
+                        )
+                else:
+                    QMessageBox.information(
+                        self,
+                        "Update",
+                        "You are using the latest version.",
+                        QMessageBox.Ok
+                    )
+            else:
+                QMessageBox.warning(self, "Error", f"Failed to check for updates: HTTP {response.status_code}")
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Error",
+                f"Failed to update the application: {e}",
+                QMessageBox.Ok
+            )
 
     def replace_files(self, extracted_path):
-        # Existing code for replacing files
-        pass  # For brevity, omitted here
+        try:
+            # Определяем пути к файлам
+            app_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+            internal_folder = os.path.join(app_dir, "_internal")
+            exe_file = os.path.join(app_dir, "quackduck.exe")
+            # Удаляем старые файлы
+            if os.path.exists(internal_folder):
+                shutil.rmtree(internal_folder)
+            if os.path.exists(exe_file):
+                os.remove(exe_file)
+            # Копируем новые файлы
+            new_internal_folder = os.path.join(extracted_path, "_internal")
+            new_exe_file = os.path.join(extracted_path, "quackduck.exe")
+            if os.path.exists(new_internal_folder):
+                shutil.copytree(new_internal_folder, internal_folder)
+            else:
+                QMessageBox.warning(self, "Error", "New '_internal' folder not found in the archive.")
+
+            if os.path.exists(new_exe_file):
+                shutil.copy2(new_exe_file, exe_file)
+            else:
+                QMessageBox.warning(self, "Error", "New 'quackduck.exe' not found in the archive.")
+
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Error",
+                f"Failed to replace files: {e}",
+                QMessageBox.Ok
+            )
 
     def on_volume_updated(self, volume):
         """Slot to handle volume updates from the microphone listener."""
@@ -515,6 +609,9 @@ class DuckWidget(QtWidgets.QWidget):
             # Proceed with extracting the new skin
             skin_name = os.path.splitext(os.path.basename(zip_path))[0]
             skin_dir = os.path.join(skins_dir, skin_name)
+
+            if os.path.exists(skin_dir):
+                shutil.rmtree(skin_dir)
 
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(skin_dir)
