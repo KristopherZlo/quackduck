@@ -28,7 +28,6 @@ import pyaudio
 import sounddevice as sd
 
 # Local imports
-# (None in this case)
 
 PROJECT_VERSION = "1.4.0"  # Project version
 
@@ -176,6 +175,80 @@ class MicrophoneListener(QThread):
         """Stop the thread."""
         self.running = False
 
+class FlowLayout(QtWidgets.QLayout):
+    def __init__(self, parent=None, margin=0, spacing=-1):
+        super(FlowLayout, self).__init__(parent)
+        self.itemList = []
+        self.setContentsMargins(margin, margin, margin, margin)
+        self.setSpacing(spacing if spacing >= 0 else self.spacing())
+
+    def __del__(self):
+        while self.count():
+            item = self.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+    def addItem(self, item):
+        self.itemList.append(item)
+
+    def count(self):
+        return len(self.itemList)
+
+    def itemAt(self, index):
+        if 0 <= index < len(self.itemList):
+            return self.itemList[index]
+        return None
+
+    def takeAt(self, index):
+        if 0 <= index < len(self.itemList):
+            return self.itemList.pop(index)
+        return None
+
+    def expandingDirections(self):
+        return QtCore.Qt.Orientations(QtCore.Qt.Orientation(0))
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self.doLayout(QtCore.QRect(0, 0, width, 0), True)
+
+    def setGeometry(self, rect):
+        super(FlowLayout, self).setGeometry(rect)
+        self.doLayout(rect, False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QtCore.QSize()
+        for item in self.itemList:
+            size = size.expandedTo(item.minimumSize())
+        margins = self.contentsMargins()
+        size += QtCore.QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+        return size
+
+    def doLayout(self, rect, testOnly):
+        x = rect.x()
+        y = rect.y()
+        lineHeight = 0
+
+        for item in self.itemList:
+            wid = item.widget()
+            spaceX = self.spacing()
+            spaceY = self.spacing()
+            nextX = x + wid.sizeHint().width() + spaceX
+            if nextX - spaceX > rect.right() and lineHeight > 0:
+                x = rect.x()
+                y = y + lineHeight + spaceY
+                nextX = x + wid.sizeHint().width() + spaceX
+                lineHeight = 0
+            if not testOnly:
+                item.setGeometry(QtCore.QRect(QtCore.QPoint(x, y), wid.sizeHint()))
+            x = nextX
+            lineHeight = max(lineHeight, wid.sizeHint().height())
+        return y + lineHeight - rect.y()
+
 class DuckWidget(QtWidgets.QWidget):
     # Signal to update the microphone volume
     volume_updated = pyqtSignal(int)
@@ -303,9 +376,9 @@ class DuckWidget(QtWidgets.QWidget):
             self.playful_chance = 0.1  # Default chance to become playful
             self.sleep_timeout = 300  # Default sleep timeout in seconds
 
-            # **Добавляем установку sound_interval_min и sound_interval_max**
-            self.sound_interval_min = 120  # Минимальный интервал звука в секундах
-            self.sound_interval_max = 600  # Максимальный интервал звука в секундах
+            # **sound_interval_min и sound_interval_max** in seconds
+            self.sound_interval_min = 120
+            self.sound_interval_max = 600
 
         # Initializing timers and other components
         self.animation_timer = QtCore.QTimer()
@@ -546,6 +619,10 @@ class DuckWidget(QtWidgets.QWidget):
         self.selected_input_device_index = self.settings.value('selected_input_device_index', None, type=int)
         self.settings.endGroup()
 
+        self.settings.beginGroup('Skins')
+        self.skins_folder_path = self.settings.value('skins_folder_path', '', type=str) or None
+        self.settings.endGroup()
+
         self.settings.beginGroup('Appearance')
         self.floor_level = self.settings.value('floor_level', 40, type=int)
         self.floor_default = self.settings.value('floor_default', True, type=bool)
@@ -581,6 +658,10 @@ class DuckWidget(QtWidgets.QWidget):
         self.settings.setValue('custom_skin_path', self.custom_skin_path or '')
         self.settings.endGroup()
 
+        self.settings.beginGroup('Skins')
+        self.settings.setValue('skins_folder_path', self.skins_folder_path or '')
+        self.settings.endGroup()
+
         self.settings.beginGroup('Behavior')
         self.settings.setValue('sound_enabled', self.sound_enabled)
         self.settings.setValue('autostart_enabled', self.autostart_enabled)
@@ -593,6 +674,14 @@ class DuckWidget(QtWidgets.QWidget):
 
     def load_skin(self, zip_path):
         try:
+            # Save current skin settings
+            previous_spritesheet_path = self.spritesheet_path if hasattr(self, 'spritesheet_path') else None
+            previous_sound_files = self.sound_files if hasattr(self, 'sound_files') else None
+            previous_frame_width = self.frame_width if hasattr(self, 'frame_width') else None
+            previous_frame_height = self.frame_height if hasattr(self, 'frame_height') else None
+            previous_animations_config = self.animations_config if hasattr(self, 'animations_config') else None
+            previous_custom_skin_path = self.custom_skin_path if hasattr(self, 'custom_skin_path') else None
+
             # Define persistent directory for skins
             skins_dir = os.path.join(os.path.expanduser('~'), '.quackduck_skins')
             if not os.path.exists(skins_dir):
@@ -606,12 +695,9 @@ class DuckWidget(QtWidgets.QWidget):
                 else:
                     os.remove(item_path)
 
-            # Proceed with extracting the new skin
+            # Extract the new skin
             skin_name = os.path.splitext(os.path.basename(zip_path))[0]
             skin_dir = os.path.join(skins_dir, skin_name)
-
-            if os.path.exists(skin_dir):
-                shutil.rmtree(skin_dir)
 
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(skin_dir)
@@ -619,7 +705,7 @@ class DuckWidget(QtWidgets.QWidget):
             # Load configuration
             json_path = os.path.join(skin_dir, 'config.json')
             if not os.path.exists(json_path):
-                QMessageBox.warning(self, "Error", "Файл config.json отсутствует в скине.")
+                QtWidgets.QMessageBox.warning(self, "Error", "config.json is missing in the skin.")
                 return False
 
             with open(json_path, 'r') as f:
@@ -627,29 +713,33 @@ class DuckWidget(QtWidgets.QWidget):
 
             # Read configuration
             spritesheet_name = config.get('spritesheet')
-            sound_names = config.get('sound')
             frame_width = config.get('frame_width')
             frame_height = config.get('frame_height')
             animations = config.get('animations', {})
 
-            spritesheet_path = os.path.join(skin_dir, spritesheet_name)
-
-            if not os.path.exists(spritesheet_path):
-                QMessageBox.warning(self, "Error", f"Файл спрайтов '{spritesheet_name}' не найден.")
+            if not spritesheet_name or not frame_width or not frame_height:
+                QtWidgets.QMessageBox.warning(self, "Error", "Incomplete configuration in config.json.")
                 return False
 
+            spritesheet_path = os.path.join(skin_dir, spritesheet_name)
+            if not os.path.exists(spritesheet_path):
+                QtWidgets.QMessageBox.warning(self, "Error", f"Spritesheet '{spritesheet_name}' not found.")
+                return False
+
+            # Load sound files
+            sound_names = config.get('sound')
             if not sound_names:
-                QMessageBox.warning(self, "Error", "Звуковой файл(ы) не указан.")
+                QtWidgets.QMessageBox.warning(self, "Error", "Sound file(s) not specified in config.json.")
                 return False
 
             if isinstance(sound_names, str):
-                sound_names = [sound_names]  # Преобразуем в список, если указан один файл
+                sound_names = [sound_names]  # Convert to list if a single file is specified
 
             sound_paths = []
             for sound_name in sound_names:
                 sound_path = os.path.join(skin_dir, sound_name)
                 if not os.path.exists(sound_path):
-                    QMessageBox.warning(self, "Error", f"Звуковой файл '{sound_name}' не найден.")
+                    QtWidgets.QMessageBox.warning(self, "Error", f"Sound file '{sound_name}' not found.")
                     return False
                 sound_paths.append(sound_path)
 
@@ -666,7 +756,7 @@ class DuckWidget(QtWidgets.QWidget):
             self.load_sprites()
             self.load_sound()
 
-            # If duck is in idle state, update current_idle_animation
+            # Update current frame
             if self.is_paused:
                 self.current_idle_animation = random.choice(list(self.idle_animations.values()))
                 self.idle_frame_index = 0
@@ -678,11 +768,51 @@ class DuckWidget(QtWidgets.QWidget):
                 else:
                     self.current_frame = self.current_idle_animation[0]
                 self.update()
+            else:
+                self.current_frame = self.idle_frames[0]
+                self.update()
 
             return True
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"Не удалось загрузить скин: {e}")
-            print(f"Не удалось загрузить скин: {e}")
+            # Restore previous skin settings
+            if previous_spritesheet_path is not None:
+                self.spritesheet_path = previous_spritesheet_path
+                self.sound_files = previous_sound_files
+                self.frame_width = previous_frame_width
+                self.frame_height = previous_frame_height
+                self.animations_config = previous_animations_config
+                self.custom_skin_path = previous_custom_skin_path
+
+                # Reload previous sprites and sounds
+                self.load_sprites()
+                self.load_sound()
+
+                # Update current frame
+                if self.is_paused:
+                    self.current_idle_animation = random.choice(list(self.idle_animations.values()))
+                    self.idle_frame_index = 0
+
+                    if self.duck_direction < 0:
+                        self.current_frame = self.current_idle_animation[0].transformed(
+                            QtGui.QTransform().scale(-1, 1)
+                        )
+                    else:
+                        self.current_frame = self.current_idle_animation[0]
+                    self.update()
+                else:
+                    self.current_frame = self.idle_frames[0]
+                    self.update()
+            else:
+                # If previous skin settings are not available, load default skin
+                self.custom_skin_path = None
+                self.animations_config = self.default_animations_config
+                self.load_sprites()
+                self.load_sound()
+                self.current_frame = self.idle_frames[0]
+                self.update()
+
+            QtWidgets.QMessageBox.warning(self, "Error", f"Failed to load skin: {e}")
+            print(f"Failed to load skin: {e}")
             return False
 
     def load_sprites(self):
@@ -1456,6 +1586,7 @@ class SettingsWindow(QtWidgets.QDialog):
         self.list_widget.setFixedWidth(150)
         self.list_widget.addItem("General")
         self.list_widget.addItem("Appearance")
+        self.list_widget.addItem("Skins")  # Added Skins tab
         self.list_widget.addItem("Advanced")
         self.list_widget.currentRowChanged.connect(self.display)
 
@@ -1469,7 +1600,6 @@ class SettingsWindow(QtWidgets.QDialog):
         left_panel_layout = QtWidgets.QVBoxLayout()
         left_panel_layout.setContentsMargins(0, 0, 0, 0)
         left_panel_layout.addWidget(self.list_widget)
-        # Removed left_panel_layout.addStretch()
         left_panel_layout.addWidget(version_label)
 
         # Left panel widget
@@ -1483,11 +1613,13 @@ class SettingsWindow(QtWidgets.QDialog):
         # Pages
         self.general_page = QtWidgets.QWidget()
         self.appearance_page = QtWidgets.QWidget()
+        self.skins_page = QtWidgets.QWidget()  # Added Skins page
         self.advanced_page = QtWidgets.QWidget()
 
         # Add pages to stack
         self.stack.addWidget(self.general_page)
         self.stack.addWidget(self.appearance_page)
+        self.stack.addWidget(self.skins_page)  # Added Skins page to stack
         self.stack.addWidget(self.advanced_page)
 
         # Add to main layout
@@ -1497,6 +1629,7 @@ class SettingsWindow(QtWidgets.QDialog):
         # Initialize pages
         self.init_general_page()
         self.init_appearance_page()
+        self.init_skins_page()  # Initialize Skins page
         self.init_advanced_page()
 
         # Set default selection
@@ -1507,6 +1640,307 @@ class SettingsWindow(QtWidgets.QDialog):
         self.preview_thread = threading.Thread(target=self.mic_preview)
         self.preview_thread.daemon = True
         self.preview_thread.start()
+
+    def init_skins_page(self):
+        layout = QtWidgets.QVBoxLayout()
+        layout.setAlignment(QtCore.Qt.AlignTop)
+        self.skins_page.setLayout(layout)
+
+        # Button to select skins folder
+        self.select_skins_folder_button = QtWidgets.QPushButton("Specify Skins Folder")
+        self.select_skins_folder_button.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.select_skins_folder_button.clicked.connect(self.select_skins_folder)
+        self.select_skins_folder_button.setToolTip("Select a folder containing skins")
+
+        # Label to display the selected path
+        self.skins_folder_path_label = QtWidgets.QLabel("No folder selected")
+        self.skins_folder_path_label.setStyleSheet("font-size: 10pt; color: #888888;")
+        self.skins_folder_path_label.setWordWrap(True)
+
+        # Scroll area to display skin previews
+        self.skins_scroll_area = QtWidgets.QScrollArea()
+        self.skins_scroll_area.setWidgetResizable(True)
+        self.skins_scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)  # Disable horizontal scroll
+        self.skins_container = QtWidgets.QWidget()
+        # Use FlowLayout instead of GridLayout
+        self.skins_layout = FlowLayout()
+        self.skins_container.setLayout(self.skins_layout)
+        self.skins_scroll_area.setWidget(self.skins_container)
+
+        # Save and Cancel buttons
+        buttons_layout = QtWidgets.QHBoxLayout()
+        buttons_layout.setAlignment(QtCore.Qt.AlignRight)
+        save_button = QtWidgets.QPushButton("Save")
+        save_button.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        save_button.clicked.connect(self.save_settings)
+        save_button.setToolTip("Save changes")
+        cancel_button = QtWidgets.QPushButton("Cancel")
+        cancel_button.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        cancel_button.clicked.connect(self.close)
+        cancel_button.setToolTip("Discard changes")
+        buttons_layout.addWidget(save_button)
+        buttons_layout.addWidget(cancel_button)
+
+        # Add widgets to layout
+        layout.addWidget(self.select_skins_folder_button)
+        layout.addWidget(self.skins_folder_path_label)
+        layout.addSpacing(10)
+        layout.addWidget(self.skins_scroll_area)
+        layout.addStretch()
+        layout.addLayout(buttons_layout)
+
+        # Load saved skins folder path if available
+        if hasattr(self.parent, 'skins_folder_path') and self.parent.skins_folder_path:
+            if os.path.exists(self.parent.skins_folder_path):
+                self.skins_folder_path = self.parent.skins_folder_path
+                self.skins_folder_path_label.setText(f"Skins Folder: {self.skins_folder_path}")
+                self.load_skins_from_folder(self.skins_folder_path)
+            else:
+                # Skins folder does not exist
+                self.skins_folder_path = None
+                self.skins_folder_path_label.setText("No folder selected")
+                QtWidgets.QMessageBox.warning(self, "Skins Folder Missing", "The skins folder was moved or deleted. Please select a new folder.")
+        else:
+            self.skins_folder_path_label.setText("No folder selected")
+
+    def select_skins_folder(self):
+        options = QtWidgets.QFileDialog.Options()
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            "Select Skins Folder",
+            "",
+            options=options
+        )
+        if folder:
+            self.skins_folder_path = folder
+            self.skins_folder_path_label.setText(f"Skins Folder: {folder}")
+            self.load_skins_from_folder(folder)
+
+    def display_skin_preview(self, skin_file, idle_frames, row, col):
+        # Create a label to display the animation
+        animation_label = QtWidgets.QLabel()
+        animation_label.setFixedSize(64, 64)
+        animation_label.setAlignment(QtCore.Qt.AlignCenter)
+
+        # Create a QMovie for the animation
+        movie = QtGui.QMovie(idle_frames[0])  # Assuming idle_frames[0] is a GIF
+        movie.setCacheMode(QtGui.QMovie.CacheAll)
+        movie.setSpeed(100)
+        movie.setScaledSize(QtCore.QSize(64, 64))
+        # Start the movie
+        animation_label.setMovie(movie)
+        movie.start()
+        # Store the movie to prevent it from being garbage collected
+        self.skin_previews.append((movie, skin_file))
+
+        # Add a label underneath with the skin name
+        skin_name = os.path.basename(skin_file)
+        skin_name_label = QtWidgets.QLabel(skin_name)
+        skin_name_label.setAlignment(QtCore.Qt.AlignCenter)
+        skin_name_label.setStyleSheet("font-size: 10pt; color: #ffffff;")
+
+        # Create a vertical layout for each skin preview
+        skin_layout = QtWidgets.QVBoxLayout()
+        skin_layout.addWidget(animation_label)
+        skin_layout.addWidget(skin_name_label)
+
+        # Create a widget to hold the layout
+        skin_widget = QtWidgets.QWidget()
+        skin_widget.setLayout(skin_layout)
+        # Make the skin_widget clickable
+        skin_widget.mousePressEvent = lambda event, skin_file=skin_file: self.apply_skin(skin_file)
+        # Add the skin_widget to the grid layout
+        self.skins_layout.addWidget(skin_widget, row, col)
+
+    def load_skins_from_folder(self, folder):
+        # Clear existing previews
+        while self.skins_layout.count():
+            item = self.skins_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.setParent(None)
+
+        # Find all skin archives in the folder (e.g., .zip files)
+        import glob
+        import tempfile
+        skin_files = glob.glob(os.path.join(folder, "*.zip"))
+
+        # Load and display skins
+        self.skin_previews = []  # Keep references to prevent garbage collection
+        for skin_file in skin_files:
+            # Check if the .zip contains a config.json file
+            with zipfile.ZipFile(skin_file, 'r') as zip_ref:
+                if 'config.json' in zip_ref.namelist():
+                    # Attempt to load the skin's idle animation frames
+                    idle_frames = self.load_idle_frames_from_skin(skin_file)
+                    if idle_frames:
+                        # Proceed to display the skin preview
+                        self.display_skin_preview(skin_file, idle_frames)
+                else:
+                    print(f"Skipped {skin_file}: No config.json found.")
+
+        # Check if any skins were loaded
+        if self.skins_layout.count() == 0:
+            QtWidgets.QMessageBox.information(self, "No Skins Found", "No valid skins were found in the selected folder.")
+
+    def load_idle_frames_from_skin(self, skin_file):
+        import zipfile
+        import tempfile
+        idle_frames = []
+        try:
+            with zipfile.ZipFile(skin_file, 'r') as zip_ref:
+                # Check for config.json
+                if 'config.json' not in zip_ref.namelist():
+                    print(f"Skin {skin_file} does not contain config.json.")
+                    return None
+
+                # Extract config.json to temporary directory
+                temp_dir = os.path.join(tempfile.gettempdir(), 'quackduck_skin_preview', os.path.basename(skin_file))
+                os.makedirs(temp_dir, exist_ok=True)
+                zip_ref.extract('config.json', temp_dir)
+
+                # Load configuration
+                config_path = os.path.join(temp_dir, 'config.json')
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+
+                # Read animations configuration
+                animations = config.get('animations', {})
+                idle_animation_keys = [key for key in animations.keys() if key.startswith('idle')]
+                if not idle_animation_keys:
+                    print(f"No idle animations found in {skin_file}.")
+                    return None
+
+                # For simplicity, we'll use the first idle animation
+                idle_animation_key = idle_animation_keys[0]
+                frame_list = animations[idle_animation_key]
+
+                # Read spritesheet information
+                spritesheet_name = config.get('spritesheet')
+                frame_width = config.get('frame_width')
+                frame_height = config.get('frame_height')
+                if not spritesheet_name or not frame_width or not frame_height:
+                    print(f"Incomplete configuration in {skin_file}.")
+                    return None
+
+                # Extract spritesheet
+                zip_ref.extract(spritesheet_name, temp_dir)
+                spritesheet_path = os.path.join(temp_dir, spritesheet_name)
+
+                # Load frames based on the frame_list
+                spritesheet = QtGui.QPixmap(spritesheet_path)
+                frames = []
+                for frame_str in frame_list:
+                    row_col = frame_str.split(':')
+                    if len(row_col) == 2:
+                        try:
+                            row = int(row_col[0])
+                            col = int(row_col[1])
+                            frame = spritesheet.copy(col * frame_width, row * frame_height, frame_width, frame_height)
+                            frames.append(frame)
+                        except ValueError:
+                            print(f"Incorrect frame format: {frame_str}")
+                return frames
+        except Exception as e:
+            print(f"Failed to load skin {skin_file}: {e}")
+            return None
+        
+    def display_skin_preview(self, skin_file, idle_frames):
+        # Создаём QLabel для отображения анимации
+        animation_label = QtWidgets.QLabel()
+        original_size = 64  # Исходный размер скина (предполагается 64x64 пикселя)
+        scale_factor = 2     # Коэффициент масштабирования (например, x2 для 128x128)
+        preview_size = original_size * scale_factor
+        animation_label.setFixedSize(preview_size, preview_size)
+        animation_label.setAlignment(QtCore.Qt.AlignCenter)
+
+        # Устанавливаем размер превью для сохранения чёткости пикселей
+        animation_label.setScaledContents(False)
+
+        # Настройка кадров анимации
+        frames = idle_frames  # Список QPixmap кадров
+        frame_count = len(frames)
+        if frame_count == 0:
+            return
+
+        # Сохраняем кадры и индекс текущего кадра
+        animation_label.frames = frames
+        animation_label.frame_index = 0
+
+        # Функция для обновления кадра
+        def update_frame():
+            frame = animation_label.frames[animation_label.frame_index]
+            # Масштабируем QPixmap с использованием FastTransformation для сохранения пиксельной чёткости
+            scaled_frame = frame.scaled(
+                animation_label.size(),
+                QtCore.Qt.KeepAspectRatio,
+                QtCore.Qt.FastTransformation
+            )
+            animation_label.setPixmap(scaled_frame)
+            animation_label.frame_index = (animation_label.frame_index + 1) % frame_count
+
+        # Настраиваем таймер для анимации
+        timer = QtCore.QTimer()
+        timer.timeout.connect(update_frame)
+        timer.start(150)  # Интервал обновления кадров (в миллисекундах)
+        update_frame()     # Отображаем первый кадр сразу
+
+        # Сохраняем таймер, чтобы он не был собран сборщиком мусора
+        animation_label.timer = timer
+
+        # Сохраняем ссылки для предотвращения сборки мусора
+        self.skin_previews.append((animation_label, timer))
+
+        # Создаём виджет для удержания QLabel
+        skin_widget = QtWidgets.QWidget()
+        skin_layout = QtWidgets.QVBoxLayout()
+        skin_layout.setContentsMargins(0, 0, 0, 0)
+        skin_layout.addWidget(animation_label)
+        skin_widget.setLayout(skin_layout)
+        skin_widget.setFixedSize(preview_size, preview_size)
+
+        # Устанавливаем tooltip с именем файла скина
+        skin_name = os.path.basename(skin_file)
+        skin_widget.setToolTip(skin_name)
+
+        # Делаем skin_widget кликабельным для применения скина
+        skin_widget.mousePressEvent = lambda event, skin_file=skin_file: self.apply_skin(skin_file)
+
+        # Добавляем skin_widget в FlowLayout для автоматического переноса на новую строку
+        self.skins_layout.addWidget(skin_widget)
+
+    def apply_skin(self, skin_file):
+        if not os.path.exists(skin_file):
+            QtWidgets.QMessageBox.warning(self, "Error", f"Skin file '{skin_file}' does not exist.")
+            # Check if the skins folder still exists
+            if os.path.exists(self.skins_folder_path):
+                # Refresh the skins list
+                self.load_skins_from_folder(self.skins_folder_path)
+            else:
+                # Skins folder is missing, reset the path and update UI
+                self.skins_folder_path = None
+                self.skins_folder_path_label.setText("No folder selected")
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Skins Folder Missing",
+                    "The skins folder was moved or deleted. Please select a new folder."
+                )
+            return
+
+        success = self.parent.load_skin(skin_file)
+        if success:
+            self.parent.custom_skin_path = skin_file  # Save the skin path
+            QtWidgets.QMessageBox.information(
+                self,
+                "Success",
+                f"Skin '{os.path.basename(skin_file)}' applied successfully."
+            )
+        else:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Error",
+                f"Failed to apply skin '{os.path.basename(skin_file)}'."
+            )
 
     def display(self, index):
         self.stack.setCurrentIndex(index)
@@ -1621,7 +2055,7 @@ class SettingsWindow(QtWidgets.QDialog):
         # Pet size
         size_label = QtWidgets.QLabel("Pet Size:")
         self.size_combo = QtWidgets.QComboBox()
-        size_factors = [1, 2, 3, 5, 10]
+        size_factors = [1, 2, 3, 5, 7, 10]
         for factor in size_factors:
             self.size_combo.addItem(f"x{factor}", factor)
         index = self.size_combo.findData(self.parent.scale_factor)
@@ -1809,6 +2243,10 @@ class SettingsWindow(QtWidgets.QDialog):
 
         # Save microphone sensitivity
         self.parent.mic_sensitivity = self.sensitivity_slider.value()
+
+        # Save skins folder path
+        if hasattr(self, 'skins_folder_path'):
+            self.parent.skins_folder_path = self.skins_folder_path
 
         # Save floor level
         if self.floor_default_checkbox.isChecked():
