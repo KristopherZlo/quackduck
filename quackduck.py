@@ -1,8 +1,5 @@
 # Standard library imports
 import sys
-import threading
-import time
-import random
 import os
 import traceback
 import zipfile
@@ -10,15 +7,16 @@ import json
 import tempfile
 import shutil
 import webbrowser
-import urllib.request
 import platform
 import hashlib
-import zipfile
 import subprocess
-import requests
+import threading
+import time
+import random
 from pathlib import Path
 
 # Third-party imports
+import requests
 import numpy as np
 from PyQt5 import QtWidgets, QtGui, QtCore
 from PyQt5.QtWidgets import QMessageBox
@@ -27,8 +25,7 @@ import pygame
 import pyaudio
 import sounddevice as sd
 
-# Local imports
-
+# Global Constants
 PROJECT_VERSION = "1.4.0"  # Project version
 
 # Global exception handler
@@ -37,11 +34,13 @@ def exception_handler(exctype, value, tb):
     crash_log_path = Path(os.path.expanduser('~')) / 'crash.log'
 
     # Collect system information
-    system_info = f"System Information:\n" \
-                  f"OS: {platform.system()} {platform.release()} ({platform.version()})\n" \
-                  f"Machine: {platform.machine()}\n" \
-                  f"Processor: {platform.processor()}\n" \
-                  f"Python Version: {platform.python_version()}\n\n"
+    system_info = (
+        f"System Information:\n"
+        f"OS: {platform.system()} {platform.release()} ({platform.version()})\n"
+        f"Machine: {platform.machine()}\n"
+        f"Processor: {platform.processor()}\n"
+        f"Python Version: {platform.python_version()}\n\n"
+    )
 
     # Write to crash log
     with open(crash_log_path, 'w') as f:
@@ -51,13 +50,11 @@ def exception_handler(exctype, value, tb):
     # Show error message to user
     msg = QMessageBox()
     msg.setIcon(QMessageBox.Critical)
-    msg.setWindowTitle("Yikes!")
-    msg.setText(f"One of the critters tripped! :(\nError: {value}")
+    msg.setWindowTitle("Error!")
+    msg.setText(f"The application encountered an error:\n{value}")
     msg.setDetailedText(system_info + error_message)
     msg.exec_()
     sys.exit(1)
-
-sys.excepthook = exception_handler
 
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and PyInstaller"""
@@ -109,8 +106,11 @@ class HeartWindow(QtWidgets.QWidget):
 
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
-        painter.setOpacity(self.opacity)
-        painter.drawPixmap(0, 0, self.image)
+        try:
+            painter.setOpacity(self.opacity)
+            painter.drawPixmap(0, 0, self.image)
+        finally:
+            painter.end()
 
     def update_position(self):
         elapsed = time.time() - self.start_time
@@ -126,7 +126,6 @@ class HeartWindow(QtWidgets.QWidget):
         self.update()
 
 class MicrophoneListener(QThread):
-    # Signal to emit the current volume
     volume_signal = pyqtSignal(int)
 
     def __init__(self, input_device_index, mic_sensitivity):
@@ -136,7 +135,6 @@ class MicrophoneListener(QThread):
         self.running = True
 
     def run(self):
-        """Thread entry point."""
         CHUNK = 1024
         RATE = 44100
         p = pyaudio.PyAudio()
@@ -172,7 +170,6 @@ class MicrophoneListener(QThread):
         p.terminate()
 
     def stop(self):
-        """Stop the thread."""
         self.running = False
 
 class FlowLayout(QtWidgets.QLayout):
@@ -250,13 +247,12 @@ class FlowLayout(QtWidgets.QLayout):
         return y + lineHeight - rect.y()
 
 class DuckWidget(QtWidgets.QWidget):
-    # Signal to update the microphone volume
     volume_updated = pyqtSignal(int)
 
     def __init__(self):
         super().__init__()
 
-        # Initializing QSettings and other parameters
+        # Initializing settings and parameters
         self.settings = QSettings()
 
         self.setWindowFlags(
@@ -266,6 +262,8 @@ class DuckWidget(QtWidgets.QWidget):
         )
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+
+        self.setAttribute(QtCore.Qt.WA_Hover, True)
 
         screen = QtWidgets.QApplication.primaryScreen()
         size = screen.size()
@@ -293,29 +291,32 @@ class DuckWidget(QtWidgets.QWidget):
         self.landed = False
         self.is_stuck = False
         self.is_landing = False
-
-        # Initialize missing attribute
         self.is_jumping = False
 
         # Playful state
         self.is_playful = False
         self.playful_timer = None
-        self.playful_duration = 0  # Will be set when playful state starts
+        self.playful_duration = 0
         self.last_playful_check = time.time()
-        self.has_jumped = False  # New flag to prevent continuous jumping
+        self.has_jumped = False
 
-        # Loading settings
+        # Timer to check mouse position
+        self.mouse_check_timer = QtCore.QTimer()
+        self.mouse_check_timer.timeout.connect(self.check_mouse_over)
+        self.mouse_check_timer.start(300)
+
+        # Initializing input devices
         self.input_devices = self.get_input_devices()
         self.load_settings()
 
-        self.current_volume = 0  # Current microphone volume level
+        self.current_volume = 0
 
-        # Initialize microphone listener thread
+        # Initialize the stream to listen to the microphone
         self.microphone_listener = MicrophoneListener(self.selected_input_device_index, self.mic_sensitivity)
         self.microphone_listener.volume_signal.connect(self.on_volume_updated)
         self.microphone_listener.start()
 
-        # Defining the default animation configuration
+        # Define default animation configuration
         self.default_animations_config = {
             "idle": ["0:0"],
             "walk": ["1:0", "1:1", "1:2", "1:3", "1:4", "1:5"],
@@ -326,21 +327,19 @@ class DuckWidget(QtWidgets.QWidget):
             "sleep_transition": ["2:1"]
         }
 
-        # Loading a skin or installing default animations
+        # Load skin or set default animations
         if self.custom_skin_path:
             success = self.load_skin(self.custom_skin_path)
             if not success:
-                # If loading the skin failed, set the default configuration
                 self.animations_config = self.default_animations_config
                 self.load_sprites()
                 self.load_sound()
         else:
-            # Setting the default configuration
             self.animations_config = self.default_animations_config
             self.load_sprites()
             self.load_sound()
 
-        # Make sure fall_frames and idle_frames are initialized
+        # Set current frame
         if hasattr(self, 'fall_frames') and self.fall_frames:
             self.current_frame = self.fall_frames[0]
         elif hasattr(self, 'idle_frames') and self.idle_frames:
@@ -348,35 +347,29 @@ class DuckWidget(QtWidgets.QWidget):
         else:
             raise AttributeError("Failed to initialize animation frames.")
 
-        # Initialize frame indices for animations
-        self.frame_index = 0  # For walking frames
-        self.jump_index = 0  # For jump frames
-        self.idle_frame_index = 0  # For idle frames
-        self.sleep_frame_index = 0  # For sleep frames
-        self.listen_frame_index = 0  # For listening frames
-        self.fall_frame_index = 0  # For fall frames
-        self.land_frame_index = 0  # For landing frames
+        # Initializing frame indices for animations
+        self.frame_index = 0
+        self.jump_index = 0
+        self.idle_frame_index = 0
+        self.sleep_frame_index = 0
+        self.listen_frame_index = 0
+        self.fall_frame_index = 0
+        self.land_frame_index = 0
 
-        # Initialize random seed and parameters based on duck's name
+        # Initialize parameters based on duck name
         if self.duck_name:
             self.seed = get_seed_from_name(self.duck_name)
-        else:
-            self.seed = None
-
-        if self.seed is not None:
             self.random_gen = random.Random(self.seed)
             self.generate_parameters()
         else:
+            self.seed = None
             self.random_gen = random.Random()
-            # Установка значений по умолчанию
-            self.movement_speed = 2  # Default movement speed
-            self.animation_speed = 100  # Default animation speed
-            self.sound_interval = random.randint(120000, 600000) / 1000  # in seconds
-            self.sound_response_chance = 0.01  # Default chance to respond to mic
-            self.playful_chance = 0.1  # Default chance to become playful
-            self.sleep_timeout = 300  # Default sleep timeout in seconds
-
-            # **sound_interval_min и sound_interval_max** in seconds
+            self.movement_speed = 2
+            self.animation_speed = 100
+            self.sound_interval = random.randint(120000, 600000) / 1000
+            self.sound_response_chance = 0.01
+            self.playful_chance = 0.1
+            self.sleep_timeout = 300
             self.sound_interval_min = 120
             self.sound_interval_max = 600
 
@@ -407,13 +400,227 @@ class DuckWidget(QtWidgets.QWidget):
 
         self.move(int(self.duck_x), int(self.duck_y))
 
+        # Add a label to display the duck's name
+        self.name_label = QtWidgets.QLabel(self.duck_name, self)
+        self.name_label.setStyleSheet("""
+            QLabel {
+                background-color: rgba(0, 0, 0, 180);
+                color: white;
+                border-radius: 5px;
+                padding: 5px;
+                font-size: 18px;
+            }
+        """)
+        self.name_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.name_label.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.name_label.hide()
+
+        # Set initial opacity to 0
+        self.name_label_opacity_effect = QtWidgets.QGraphicsOpacityEffect()
+        self.name_label_opacity_effect.setOpacity(0)
+        self.name_label.setGraphicsEffect(self.name_label_opacity_effect)
+
+        # Creating an animation for opacity
+        self.name_label_animation = QtCore.QPropertyAnimation(self.name_label_opacity_effect, b"opacity")
+        self.name_label_animation.setDuration(200)
+        self.name_label_animation.finished.connect(self.on_name_label_animation_finished)
+
+        # Enable mouse tracking to receive hover events
+        self.setMouseTracking(True)
+
+    def check_mouse_over(self):
+        cursor_pos = QtGui.QCursor.pos()
+        duck_rect = self.geometry()
+        if duck_rect.contains(cursor_pos):
+            local_pos = self.mapFromGlobal(cursor_pos)
+            x = local_pos.x()
+            y = local_pos.y()
+            if 0 <= x < self.current_frame.width() and 0 <= y < self.current_frame.height():
+                image = self.current_frame_image  # Use cached image
+                pixel_color = image.pixelColor(int(x), int(y))
+                if pixel_color.alpha() > 0:
+                    if not self.name_label.isVisible():
+                        label_width = self.name_label.sizeHint().width()
+                        # label_height = self.name_label.sizeHint().height()
+                        label_x = (self.width() - label_width) / 2
+                        label_y = -10
+                        self.name_label.move(int(label_x), int(label_y))
+                        self.name_label.show()
+                        self.name_label.raise_()
+                        self.name_label_animation.stop()
+                        self.name_label_animation.setStartValue(self.name_label_opacity_effect.opacity())
+                        self.name_label_animation.setEndValue(1.0)
+                        self.name_label_animation.start()
+                    return
+        if self.name_label.isVisible():
+            self.name_label_animation.stop()
+            self.name_label_animation.setStartValue(self.name_label_opacity_effect.opacity())
+            self.name_label_animation.setEndValue(0.0)
+            self.name_label_animation.start()
+
+    def on_name_label_animation_finished(self):
+        if self.name_label_opacity_effect.opacity() == 0.0:
+            self.name_label.hide()
+
+    def update_duck_name(self):
+        self.name_label.setText(self.duck_name)
+
+    def update_position(self):
+        current_time = time.time()
+
+        # Check playfulness status every 10 minutes
+        if not self.is_playful and current_time - self.last_playful_check > 600:
+            self.last_playful_check = current_time
+            if self.random_gen.random() < self.playful_chance:
+                self.start_playful_state()
+
+        if self.is_playful:
+            if current_time - self.playful_start_time > self.playful_duration:
+                self.is_playful = False
+                self.has_jumped = False
+            else:
+                self.chase_cursor()
+
+                # Checking proximity to cursor for jumping
+                cursor_x = QtGui.QCursor.pos().x()
+                duck_center_x = self.duck_x + self.current_frame.width() / 2
+                distance_x = abs(cursor_x - duck_center_x)
+
+                if distance_x < 50 and self.on_ground and not self.has_jumped:
+                    self.start_jump()
+                    self.has_jumped = True
+                elif distance_x >= 100:
+                    self.has_jumped = False
+        else:
+            # Check for sleep mode transition
+            if current_time - self.last_sound_time > self.sleep_timeout:
+                if not self.is_sleeping and self.sleep_timer is None:
+                    self.start_sleep_transition()
+            else:
+                self.is_sleeping = False
+                if self.sleep_timer:
+                    self.sleep_timer.stop()
+                    self.sleep_timer = None
+                    self.sleep_stage = 0
+                    self.is_paused = False
+
+            # Listening mode
+            if self.is_listening:
+                if current_time - self.last_sound_time > 1:
+                    self.is_listening = False
+                    if self.random_gen.random() < self.sound_response_chance:
+                        self.play_sound_immediately()
+
+            if self.dragging:
+                cursor_pos = QtGui.QCursor.pos()
+                self.duck_x = cursor_pos.x() - self.offset_x
+                self.duck_y = cursor_pos.y() - self.offset_y
+                self.on_ground = False
+            elif not self.on_ground and not self.is_jumping:
+                # Handling a fall
+                if self.vertical_speed == 0:
+                    self.vertical_speed = 10
+                    self.fall_frame_index = 0
+                self.vertical_speed += 0.5
+                self.duck_y += self.vertical_speed
+                if self.duck_y >= self.get_floor_level():
+                    self.duck_y = self.get_floor_level()
+                    self.on_ground = True
+                    self.vertical_speed = 0
+
+                    if self.land_frames:
+                        self.is_landing = True
+                        self.land_frame_index = 0
+                    else:
+                        self.landed = True
+            elif not self.is_listening and not self.is_sleeping and not self.is_paused and not self.is_jumping and not self.is_landing:
+                movement_speed = self.movement_speed
+                if self.is_playful:
+                    movement_speed *= self.playful_speed_multiplier
+                self.duck_x += self.duck_direction * movement_speed
+
+                # Checking screen boundaries
+                if self.duck_x <= 10:
+                    if self.duck_stuck_bug:
+                        self.is_stuck = False
+                        self.duck_direction = 1
+                    else:
+                        self.is_stuck = True
+                        self.duck_x = 0
+                        if random.random() < 0.01:
+                            self.play_sound_immediately()
+                elif self.duck_x >= self.screen_width - self.current_frame.width() - 10:
+                    if self.duck_stuck_bug:
+                        self.is_stuck = False
+                        self.duck_direction = -1
+                    else:
+                        self.is_stuck = True
+                        self.duck_x = self.screen_width - self.current_frame.width()
+                        if random.random() < 0.01:
+                            self.play_sound_immediately()
+                else:
+                    self.is_stuck = False
+
+        # Jump handling
+        if self.is_jumping:
+            self.vertical_speed += 0.5
+            self.duck_y += self.vertical_speed
+            if self.duck_y >= self.get_floor_level():
+                self.duck_y = self.get_floor_level()
+                self.on_ground = True
+                self.is_jumping = False
+                self.vertical_speed = 0
+
+                if self.land_frames:
+                    self.is_landing = True
+                    self.land_frame_index = 0
+                else:
+                    self.landed = True
+
+        # Duck Position Update
+        self.move(int(self.duck_x), int(self.duck_y))
+
+        # Update the position of the name label if it is visible
+        if self.name_label.isVisible():
+            label_width = self.name_label.sizeHint().width()
+            # label_height = self.name_label.sizeHint().height()
+            label_x = (self.width() - label_width) / 2
+            label_y = -10
+            self.name_label.move(int(label_x), int(label_y))
+            self.name_label.raise_()
+
+    def get_name_characteristics(self, name):
+        seed = get_seed_from_name(name)
+        random_gen = random.Random(seed)
+        movement_speed = random_gen.uniform(1.5, 2)
+        animation_speed = 100 / (movement_speed / 2)
+        sound_interval_min = 60 + random_gen.random() * (300 - 60)
+        sound_interval_max = 301 + random_gen.random() * (900 - 301)
+        if sound_interval_min >= sound_interval_max:
+            sound_interval_min, sound_interval_max = sound_interval_max, sound_interval_min
+        sound_response_chance = 0.01 + random_gen.random() * (0.25 - 0.01)
+        playful_chance = 0.1 + random_gen.random() * (0.5 - 0.1)
+        sleep_timeout = (5 + random_gen.random() * 10) * 60
+
+        characteristics = {
+            "Movement speed": f"{movement_speed:.2f}",
+            "Animation speed": f"{animation_speed:.2f}",
+            "Min. sound interval": f"{sound_interval_min/60:.2f} min",
+            "Max. sound interval": f"{sound_interval_max/60:.2f} min",
+            "Sound response chance": f"{sound_response_chance*100:.2f}%",
+            "A chance to be playful": f"{playful_chance*100:.2f}%",
+            "Sleep timeout": f"{sleep_timeout/60:.2f} min",
+        }
+
+        return characteristics
+
     def reset_settings_to_default(self):
-        # Remove custom skin files if any
+        # Remove custom skins if any
         skins_dir = os.path.join(os.path.expanduser('~'), '.quackduck_skins')
         if os.path.exists(skins_dir):
             shutil.rmtree(skins_dir)
 
-        # Установка значений по умолчанию
+        # Set default values
         self.mic_sensitivity = 10
         self.floor_level = 40
         self.floor_default = True
@@ -422,10 +629,9 @@ class DuckWidget(QtWidgets.QWidget):
         self.selected_input_device_index = self.input_devices[0][0] if self.input_devices else None
         self.autostart_enabled = self.check_autostart()
         self.duck_stuck_bug = True
-        self.custom_skin_path = None  # Сбросить пользовательскую тему
+        self.custom_skin_path = None
 
-        # Do not reset duck_name
-        # Remove attributes related to custom skin
+        # Remove attributes associated with a custom skin
         if hasattr(self, 'sound_files'):
             del self.sound_files
         if hasattr(self, 'sound_file'):
@@ -444,7 +650,7 @@ class DuckWidget(QtWidgets.QWidget):
         self.load_sprites()
         self.load_sound()
 
-        # Update current_idle_animation
+        # Update current wait animation
         self.current_idle_animation = random.choice(list(self.idle_animations.values()))
         self.idle_frame_index = 0
 
@@ -460,26 +666,15 @@ class DuckWidget(QtWidgets.QWidget):
         self.save_settings()
 
     def generate_parameters(self):
-        # Movement speed between 1.5 and 2.5
         self.movement_speed = self.random_gen.uniform(1.5, 2)
-
-        # Adjust animation speed inversely proportional to movement speed
         self.animation_speed = 100 / (self.movement_speed / 2)
-
-        # Timing for sounds (2 to 15 minutes)
-        self.sound_interval_min = 60 + self.random_gen.random() * (300 - 60)  # от 60 до 300 секунд
-        self.sound_interval_max = 301 + self.random_gen.random() * (900 - 301)  # от 301 до 900 секунд
+        self.sound_interval_min = 60 + self.random_gen.random() * (300 - 60)
+        self.sound_interval_max = 301 + self.random_gen.random() * (900 - 301)
         if self.sound_interval_min >= self.sound_interval_max:
             self.sound_interval_min, self.sound_interval_max = self.sound_interval_max, self.sound_interval_min
-
-        # Chance to respond to microphone interaction (0.01 to 0.25)
         self.sound_response_chance = 0.01 + self.random_gen.random() * (0.25 - 0.01)
-
-        # Chance to enter "is_playful" state (0.1 to 0.5)
         self.playful_chance = 0.1 + self.random_gen.random() * (0.5 - 0.1)
-
-        # Timing for sleep (5 to 15 minutes)
-        self.sleep_timeout = (5 + self.random_gen.random() * 10) * 60  # in seconds
+        self.sleep_timeout = (5 + self.random_gen.random() * 10) * 60
 
     def update_application(self):
         current_version = PROJECT_VERSION
@@ -492,40 +687,40 @@ class DuckWidget(QtWidgets.QWidget):
                 if latest_version > current_version:
                     download_url = None
                     archive_name = None
-                    # Ищем только .zip архивы
+                    # Search only .zip archives
                     for asset in data['assets']:
                         if asset['name'].endswith('.zip'):
                             download_url = asset['browser_download_url']
                             archive_name = asset['name']
                             break
                     if download_url:
-                        # Скачиваем архив
+                        # Download the archive
                         temp_archive_path = os.path.join(tempfile.gettempdir(), archive_name)
                         with requests.get(download_url, stream=True) as r:
                             with open(temp_archive_path, 'wb') as f:
                                 shutil.copyfileobj(r.raw, f)
-                        # Распаковываем .zip архив
+                        # Unpack the .zip archive
                         extracted_path = os.path.join(tempfile.gettempdir(), "quackduck_update")
                         if os.path.exists(extracted_path):
                             shutil.rmtree(extracted_path)
                         os.makedirs(extracted_path)
                         with zipfile.ZipFile(temp_archive_path, 'r') as zip_ref:
                             zip_ref.extractall(extracted_path)
-                        # Получаем путь к 'updater.exe'
+                        # Get the path to 'updater.exe'
                         updater_exe_source = resource_path('updater.exe')
-                        # Копируем 'updater.exe' в extracted_path
+                        # Copy 'updater.exe' to extracted_path
                         updater_exe_path = os.path.join(extracted_path, 'updater.exe')
                         shutil.copy2(updater_exe_source, updater_exe_path)
-                        # Запускаем updater и выходим
+                        # Launch updater and exit
                         subprocess.Popen([updater_exe_path, os.getcwd(), extracted_path])
-                        # Информируем пользователя
+                        # Inform the user
                         QMessageBox.information(
                             self,
                             "Update",
                             f"The app is being updated to version {latest_version}. It will be restarted after the update is complete.",
                             QMessageBox.Ok
                         )
-                        # Выходим из приложения
+                        # Exit the application
                         QtWidgets.qApp.quit()
                     else:
                         QMessageBox.information(
@@ -553,16 +748,16 @@ class DuckWidget(QtWidgets.QWidget):
 
     def replace_files(self, extracted_path):
         try:
-            # Определяем пути к файлам
+            # Define paths to files
             app_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
             internal_folder = os.path.join(app_dir, "_internal")
             exe_file = os.path.join(app_dir, "quackduck.exe")
-            # Удаляем старые файлы
+            # Delete old files
             if os.path.exists(internal_folder):
                 shutil.rmtree(internal_folder)
             if os.path.exists(exe_file):
                 os.remove(exe_file)
-            # Копируем новые файлы
+            # Copy new files
             new_internal_folder = os.path.join(extracted_path, "_internal")
             new_exe_file = os.path.join(extracted_path, "quackduck.exe")
             if os.path.exists(new_internal_folder):
@@ -821,7 +1016,7 @@ class DuckWidget(QtWidgets.QWidget):
             frame_width = self.frame_width
             frame_height = self.frame_height
         else:
-            # Стандартное поведение
+            # Standard behavior
             spritesheet = QtGui.QPixmap(str(resource_path('ducky_spritesheet.png')))
             frame_width = 32
             frame_height = 32
@@ -887,7 +1082,7 @@ class DuckWidget(QtWidgets.QWidget):
         elif self.idle_frames:
             self.current_frame = self.idle_frames[0]
         else:
-            raise AttributeError("Не удалось инициализировать кадры анимации.")
+            raise AttributeError("Failed to initialize animation frames.")
 
         # Initialize frame indices for animations
         self.frame_index = 0  # For walking frames
@@ -933,225 +1128,166 @@ class DuckWidget(QtWidgets.QWidget):
             self.sounds = [pygame.mixer.Sound(sound_file_path)]
 
     def paintEvent(self, event):
+        """
+        Paint the current frame of the duck onto the widget.
+        Ensures that there is a valid frame to draw.
+        """
         painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform, True)
-        painter.drawPixmap(0, 0, self.current_frame)
+        try:
+            painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform, True)
+            if self.current_frame:
+                painter.drawPixmap(0, 0, self.current_frame)
+            else:
+                # Do nothing :)
+                pass
+        except Exception as e:
+            print(f"Exception in paintEvent: {e}")
+        finally:
+            painter.end()
+
 
     def update_animation(self):
-        if self.is_jumping:
-            # Play jump animation once
-            frames = self.jump_frames
-            if self.jump_index < len(frames):
-                frame = frames[self.jump_index]
-                self.jump_index += 1
-            else:
-                frame = frames[-1]  # Stay on the last frame until landing
-            if self.duck_direction < 0:
-                frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
-            self.current_frame = frame
-        elif self.is_landing:
-            # Check if there are LAND animation frames
-            if self.land_frames:
+        """
+        Update the duck's animation based on its current state.
+        Ensures that animation frames are available before accessing them.
+        """
+        try:
+            if self.is_jumping:
+                frames = self.jump_frames
+                if frames:
+                    if self.jump_index < len(frames):
+                        frame = frames[self.jump_index]
+                        self.jump_index += 1
+                    else:
+                        frame = frames[-1]
+                    if self.duck_direction < 0:
+                        frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
+                    self.current_frame = frame
+                else:
+                    # No jump frames available
+                    pass
+
+            elif self.is_landing:
                 frames = self.land_frames
-                if self.land_frame_index < len(frames):
-                    frame = frames[self.land_frame_index]
-                    self.land_frame_index += 1
-                else:
-                    # After landing animation ends, reset state
-                    self.is_landing = False
-                    self.land_frame_index = 0
-                    self.landed = True  # Mark that the duck has landed
-                    return  # Exit method, next animation will be handled in the next cycle
-                if self.duck_direction < 0:
-                    frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
-                self.current_frame = frame
-            else:
-                # If no frames, reset landing state
-                self.is_landing = False
-                self.landed = True
-        elif not self.on_ground and not self.is_jumping:
-            # Falling animation, play once and stay on the last frame
-            frames = self.fall_frames
-            if self.fall_frame_index < len(frames):
-                frame = frames[self.fall_frame_index]
-                self.fall_frame_index += 1
-            else:
-                frame = frames[-1]  # Stay on the last frame
-            if self.duck_direction < 0:
-                frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
-            self.current_frame = frame
-        elif self.is_playful:
-            # Running animation in playful state
-            animation_speed = self.animation_speed / 2  # Accelerated animation
-            self.animation_timer.start(int(animation_speed))
-            frames = self.walk_frames
-            frame = frames[self.frame_index % len(frames)]
-            if self.duck_direction < 0:
-                frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
-            self.current_frame = frame
-            self.frame_index += 1
-        else:
-            # Standard animations
-            animation_speed = self.animation_speed
-            self.animation_timer.start(int(animation_speed))
-
-            if self.landed:
-                frames = self.idle_frames
-                frame = frames[self.idle_frame_index % len(frames)]
-                if self.duck_direction < 0:
-                    frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
-                self.current_frame = frame
-                self.landed = False
-                self.idle_frame_index = 0
-            elif self.is_sleeping:
-                frames = self.sleep_frames
-                frame = frames[self.sleep_frame_index % len(frames)]
-                self.current_frame = frame
-                self.sleep_frame_index += 1
-            elif self.is_listening:
-                frames = self.listen_frames
-                frame = frames[self.listen_frame_index % len(frames)]
-                self.current_frame = frame
-                self.listen_frame_index += 1
-            elif self.is_paused:
-                # Check if current_idle_animation is initialized
-                if not self.current_idle_animation:
-                    self.current_idle_animation = random.choice(list(self.idle_animations.values()))
-                    self.idle_frame_index = 0
-
-                frames = self.current_idle_animation
-                frame = frames[self.idle_frame_index % len(frames)]
-                if self.duck_direction < 0:
-                    frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
-                self.current_frame = frame
-                self.idle_frame_index += 1
-            else:
-                frames = self.walk_frames
-                frame = frames[self.frame_index % len(frames)]
-                if self.duck_direction < 0:
-                    frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
-                self.current_frame = frame
-                self.frame_index += 1
-
-        self.resize(self.current_frame.size())
-        self.update()
-
-    def update_position(self):
-        current_time = time.time()
-
-        # Check playful state every 10 minutes
-        if not self.is_playful and current_time - self.last_playful_check > 600:
-            self.last_playful_check = current_time
-            if self.random_gen.random() < self.playful_chance:
-                self.start_playful_state()
-
-        if self.is_playful:
-            if current_time - self.playful_start_time > self.playful_duration:
-                self.is_playful = False
-                self.has_jumped = False  # Reset jump flag when exiting playful state
-            else:
-                self.chase_cursor()
-
-                # Check proximity to cursor for jumping
-                cursor_x = QtGui.QCursor.pos().x()
-                duck_center_x = self.duck_x + self.current_frame.width() / 2
-                distance_x = abs(cursor_x - duck_center_x)
-
-                if distance_x < 50 and self.on_ground and not self.has_jumped:
-                    self.start_jump()
-                    self.has_jumped = True  # Prevent repeated jumps
-                elif distance_x >= 100:
-                    self.has_jumped = False
-        else:
-            # Check for sleep transition
-            if current_time - self.last_sound_time > self.sleep_timeout:
-                if not self.is_sleeping and self.sleep_timer is None:
-                    self.start_sleep_transition()
-            else:
-                self.is_sleeping = False
-                if self.sleep_timer:
-                    self.sleep_timer.stop()
-                    self.sleep_timer = None
-                    self.sleep_stage = 0
-                    self.is_paused = False
-
-            # Listening mode
-            if self.is_listening:
-                if current_time - self.last_sound_time > 1:
-                    self.is_listening = False
-                    if self.random_gen.random() < self.sound_response_chance:
-                        self.play_sound_immediately()
-
-            if self.dragging:
-                cursor_pos = QtGui.QCursor.pos()
-                self.duck_x = cursor_pos.x() - self.offset_x
-                self.duck_y = cursor_pos.y() - self.offset_y
-                self.on_ground = False
-            elif not self.on_ground and not self.is_jumping:
-                # Handle falling
-                if self.vertical_speed == 0:
-                    self.vertical_speed = 10  # Initial falling speed
-                    self.fall_frame_index = 0  # Reset fall frame index
-                self.vertical_speed += 0.5
-                self.duck_y += self.vertical_speed
-                if self.duck_y >= self.get_floor_level():
-                    self.duck_y = self.get_floor_level()
-                    self.on_ground = True
-                    self.vertical_speed = 0
-
-                    # If there is a LAND animation, set landing state
-                    if self.land_frames:
-                        self.is_landing = True
+                if frames:
+                    if self.land_frame_index < len(frames):
+                        frame = frames[self.land_frame_index]
+                        self.land_frame_index += 1
+                    else:
+                        self.is_landing = False
                         self.land_frame_index = 0
-                    else:
-                        self.landed = True  # If no LAND animation, enter landed state
-            elif not self.is_listening and not self.is_sleeping and not self.is_paused and not self.is_jumping and not self.is_landing:
-                movement_speed = self.movement_speed
-                if self.is_playful:
-                    movement_speed *= self.playful_speed_multiplier  # Increase speed in playful state
-                self.duck_x += self.duck_direction * movement_speed
-
-                # Screen edge checking
-                if self.duck_x <= 10:
-                    if self.duck_stuck_bug:
-                        self.is_stuck = False
-                        self.duck_direction = 1
-                    else:
-                        self.is_stuck = True
-                        self.duck_x = 0
-                        if random.random() < 0.01:
-                            self.play_sound_immediately()
-                elif self.duck_x >= self.screen_width - self.current_frame.width() - 10:
-                    if self.duck_stuck_bug:
-                        self.is_stuck = False
-                        self.duck_direction = -1
-                    else:
-                        self.is_stuck = True
-                        self.duck_x = self.screen_width - self.current_frame.width()
-                        if random.random() < 0.01:
-                            self.play_sound_immediately()
+                        self.landed = True
+                        return
+                    if self.duck_direction < 0:
+                        frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
+                    self.current_frame = frame
                 else:
-                    self.is_stuck = False
+                    # No landing frames available
+                    self.is_landing = False
+                    self.landed = True
 
-        # Handle jumping
-        if self.is_jumping:
-            self.vertical_speed += 0.5
-            self.duck_y += self.vertical_speed
-            if self.duck_y >= self.get_floor_level():
-                self.duck_y = self.get_floor_level()
-                self.on_ground = True
-                self.is_jumping = False  # Reset jumping state
-                self.vertical_speed = 0
-
-                # If there is a LAND animation, set landing state
-                if self.land_frames:
-                    self.is_landing = True
-                    self.land_frame_index = 0
+            elif not self.on_ground and not self.is_jumping:
+                frames = self.fall_frames
+                if frames:
+                    if self.fall_frame_index < len(frames):
+                        frame = frames[self.fall_frame_index]
+                        self.fall_frame_index += 1
+                    else:
+                        frame = frames[-1]
+                    if self.duck_direction < 0:
+                        frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
+                    self.current_frame = frame
                 else:
-                    self.landed = True  # If no LAND animation, enter landed state
+                    # No falling frames available
+                    pass
 
-        # Update duck position
-        self.move(int(self.duck_x), int(self.duck_y))
+            elif self.is_playful:
+                # Accelerate animation speed during playful state
+                self.animation_timer.start(int(self.animation_speed / 2))
+                frames = self.walk_frames
+                if frames:
+                    frame = frames[self.frame_index % len(frames)]
+                    if self.duck_direction < 0:
+                        frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
+                    self.current_frame = frame
+                    self.frame_index += 1
+                else:
+                    # No walking frames available
+                    pass
+
+            else:
+                # Standard animations
+                self.animation_timer.start(int(self.animation_speed))
+                if self.landed:
+                    frames = self.idle_frames
+                    if frames:
+                        frame = frames[self.idle_frame_index % len(frames)]
+                        if self.duck_direction < 0:
+                            frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
+                        self.current_frame = frame
+                        self.landed = False
+                        self.idle_frame_index = 0
+                    else:
+                        # No idle frames available
+                        pass
+
+                elif self.is_sleeping:
+                    frames = self.sleep_frames
+                    if frames:
+                        frame = frames[self.sleep_frame_index % len(frames)]
+                        self.current_frame = frame
+                        self.sleep_frame_index += 1
+                    else:
+                        # No sleeping frames available
+                        pass
+
+                elif self.is_listening:
+                    frames = self.listen_frames
+                    if frames:
+                        frame = frames[self.listen_frame_index % len(frames)]
+                        self.current_frame = frame
+                        self.listen_frame_index += 1
+                    else:
+                        # No listening frames available
+                        pass
+
+                elif self.is_paused:
+                    if not self.current_idle_animation:
+                        if self.idle_animations:
+                            self.current_idle_animation = random.choice(list(self.idle_animations.values()))
+                            self.idle_frame_index = 0
+                        else:
+                            self.current_idle_animation = []
+                    frames = self.current_idle_animation
+                    if frames:
+                        frame = frames[self.idle_frame_index % len(frames)]
+                        if self.duck_direction < 0:
+                            frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
+                        self.current_frame = frame
+                        self.idle_frame_index += 1
+                    else:
+                        # No current idle animation frames available
+                        pass
+
+                else:
+                    frames = self.walk_frames
+                    if frames:
+                        frame = frames[self.frame_index % len(frames)]
+                        if self.duck_direction < 0:
+                            frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
+                        self.current_frame = frame
+                        self.frame_index += 1
+                    else:
+                        # No walking frames available
+                        pass
+
+            # Update the cached image for hit detection
+            if self.current_frame:
+                self.current_frame_image = self.current_frame.toImage()
+                self.resize(self.current_frame.size())
+                self.update()
+        except Exception as e:
+            print(f"Exception in update_animation: {e}")
 
     def start_playful_state(self):
         if self.is_sleeping:
@@ -1242,8 +1378,8 @@ class DuckWidget(QtWidgets.QWidget):
             sound.play()
 
     def reset_sound_timer(self):
-        # Выбираем случайное время из интервала [X; Y]
-        interval = self.random_gen.uniform(self.sound_interval_min, self.sound_interval_max) * 1000  # в миллисекундах
+        # We select a random time from the interval [X; Y]
+        interval = self.random_gen.uniform(self.sound_interval_min, self.sound_interval_max) * 1000  # in milliseconds
         self.sound_timer.start(int(interval))
 
     def toggle_pause(self):
@@ -1388,12 +1524,6 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
         self.window = window
 
         menu = QtWidgets.QMenu(parent)
-        # Remove cursor stylesheets to avoid warnings
-        # menu.setStyleSheet("""
-        #     QMenu::item {
-        #         cursor: pointer;
-        #     }
-        # """)
 
         settings_action = menu.addAction("⚙️ Settings")
         settings_action.triggered.connect(self.open_settings)
@@ -1474,108 +1604,96 @@ class SettingsWindow(QtWidgets.QDialog):
         self.setWindowModality(QtCore.Qt.ApplicationModal)
         self.setFixedSize(600, 500)
         
-        # Corrected stylesheet with proper URL formatting
-        arrow_down_path = resource_path("icons/arrow_down.png")
-        arrow_down_hover_path = resource_path("icons/arrow_down_hover.png")
-        self.setStyleSheet(f"""
-            QDialog {{
-                background-color: #1e1e1e;
-                color: #ffffff;
-                font-family: 'Segoe UI', sans-serif;
-            }}
-            QLabel {{
-                font-size: 12pt;
-            }}
-            QLineEdit, QComboBox, QSpinBox {{
-                background-color: #2d2d2d;
-                border: 1px solid #3c3c3c;
-                padding: 6px;
-                border-radius: 4px;
-                font-size: 10pt;
-                color: #ffffff;
-            }}
-            QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{
-                border: 1px solid #0078d7;
-            }}
-            QPushButton {{
-                background-color: #2d2d2d;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-size: 10pt;
-                color: #ffffff;
-            }}
-            QPushButton:hover {{
-                background-color: #3e3e40;
-            }}
-            QPushButton:pressed {{
-                background-color: #0078d7;
-            }}
-            QCheckBox {{
-                padding: 4px;
-                font-size: 10pt;
-            }}
-            QListWidget {{
-                background-color: #2d2d2d;
-                border-right: 1px solid #3c3c3c;
-                font-size: 10pt;
-                outline: 0;
-            }}
-            QListWidget::item {{
-                padding: 10px;
-                color: #ffffff;
-            }}
-            QListWidget::item:selected {{
-                background-color: #0078d7;
-                color: #ffffff;
-            }}
-            QListWidget::item:hover {{
-                background-color: #3e3e40;
-            }}
-            QStackedWidget {{
-                background-color: #1e1e1e;
-            }}
-            QSlider::groove:horizontal {{
-                height: 6px;
-                background: #3c3c3c;
-                border-radius: 3px;
-            }}
-            QSlider::handle:horizontal {{
-                background: #0078d7;
-                width: 14px;
-                margin: -4px 0;
-                border-radius: 7px;
-            }}
-            QProgressBar {{
-                text-align: center;
-                border: 1px solid #3c3c3c;
-                border-radius: 4px;
-                background-color: #2d2d2d;
-            }}
-            QProgressBar::chunk {{
-                background-color: #0078d7;
-                border-radius: 4px;
-            }}
-            QScrollArea {{
-                border: none;
-            }}
-            /* Style arrows in QComboBox and QSpinBox */
-            QComboBox::drop-down, QSpinBox::up-button, QSpinBox::down-button {{
-                background: transparent;
-                border: none;
-                width: 20px;
-            }}
-            QComboBox::down-arrow, QSpinBox::up-arrow, QSpinBox::down-arrow {{
-                image: url('file:///{os.path.abspath(arrow_down_path).replace(os.sep, "/")}');
-                width: 12px;
-                height: 12px;
-            }}
-            QComboBox::down-arrow:hover, QSpinBox::up-arrow:hover, QSpinBox::down-arrow:hover {{
-                image: url('file:///{os.path.abspath(arrow_down_hover_path).replace(os.sep, "/")}');
-            }}
-        """)
+        try:
+            self.setStyleSheet(f"""
+                QDialog {{
+                    background-color: #1e1e1e;
+                    color: #ffffff;
+                    font-family: 'Segoe UI', sans-serif;
+                }}
+                QLabel {{
+                    font-size: 12pt;
+                }}
+                QLineEdit, QComboBox, QSpinBox {{
+                    background-color: #2d2d2d;
+                    border: 1px solid #3c3c3c;
+                    padding: 6px;
+                    border-radius: 4px;
+                    font-size: 10pt;
+                    color: #ffffff;
+                }}
+                QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{
+                    border: 1px solid #0078d7;
+                }}
+                QPushButton {{
+                    background-color: #2d2d2d;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    font-size: 10pt;
+                    color: #ffffff;
+                }}
+                QPushButton:hover {{
+                    background-color: #3e3e40;
+                }}
+                QPushButton:pressed {{
+                    background-color: #0078d7;
+                }}
+                QCheckBox {{
+                    padding: 4px;
+                    font-size: 10pt;
+                }}
+                QListWidget {{
+                    background-color: #2d2d2d;
+                    border-right: 1px solid #3c3c3c;
+                    font-size: 10pt;
+                    outline: 0;
+                }}
+                QListWidget::item {{
+                    padding: 10px;
+                    color: #ffffff;
+                }}
+                QListWidget::item:selected {{
+                    background-color: #0078d7;
+                    color: #ffffff;
+                }}
+                QListWidget::item:hover {{
+                    background-color: #3e3e40;
+                }}
+                QStackedWidget {{
+                    background-color: #1e1e1e;
+                }}
+                QSlider::groove:horizontal {{
+                    height: 6px;
+                    background: #3c3c3c;
+                    border-radius: 3px;
+                }}
+                QSlider::handle:horizontal {{
+                    background: #0078d7;
+                    width: 14px;
+                    margin: -4px 0;
+                    border-radius: 7px;
+                }}
+                QProgressBar {{
+                    text-align: center;
+                    border: 1px solid #3c3c3c;
+                    border-radius: 4px;
+                    background-color: #2d2d2d;
+                }}
+                QProgressBar::chunk {{
+                    background-color: #0078d7;
+                    border-radius: 4px;
+                }}
+                QScrollArea {{
+                    border: none;
+                }}
+            """)
+        except Exception as e:
+            print(f"Error applying styles: {e}")
 
         self.parent = parent
+
+        self.skin_previews = []
 
         # Main layout
         main_layout = QtWidgets.QHBoxLayout(self)
@@ -1586,7 +1704,7 @@ class SettingsWindow(QtWidgets.QDialog):
         self.list_widget.setFixedWidth(150)
         self.list_widget.addItem("General")
         self.list_widget.addItem("Appearance")
-        self.list_widget.addItem("Skins")  # Added Skins tab
+        self.list_widget.addItem("Skins")
         self.list_widget.addItem("Advanced")
         self.list_widget.currentRowChanged.connect(self.display)
 
@@ -1613,13 +1731,13 @@ class SettingsWindow(QtWidgets.QDialog):
         # Pages
         self.general_page = QtWidgets.QWidget()
         self.appearance_page = QtWidgets.QWidget()
-        self.skins_page = QtWidgets.QWidget()  # Added Skins page
+        self.skins_page = QtWidgets.QWidget()
         self.advanced_page = QtWidgets.QWidget()
 
         # Add pages to stack
         self.stack.addWidget(self.general_page)
         self.stack.addWidget(self.appearance_page)
-        self.stack.addWidget(self.skins_page)  # Added Skins page to stack
+        self.stack.addWidget(self.skins_page)
         self.stack.addWidget(self.advanced_page)
 
         # Add to main layout
@@ -1629,7 +1747,7 @@ class SettingsWindow(QtWidgets.QDialog):
         # Initialize pages
         self.init_general_page()
         self.init_appearance_page()
-        self.init_skins_page()  # Initialize Skins page
+        self.init_skins_page()
         self.init_advanced_page()
 
         # Set default selection
@@ -1753,12 +1871,20 @@ class SettingsWindow(QtWidgets.QDialog):
         self.skins_layout.addWidget(skin_widget, row, col)
 
     def load_skins_from_folder(self, folder):
+        for animation_label, timer in self.skin_previews:
+            timer.stop()
+            timer.deleteLater()
+            animation_label.deleteLater()
+        self.skin_previews.clear()
+
         # Clear existing previews
         while self.skins_layout.count():
             item = self.skins_layout.takeAt(0)
             widget = item.widget()
             if widget:
-                widget.setParent(None)
+                widget.deleteLater()
+
+        self.skin_previews = []
 
         # Find all skin archives in the folder (e.g., .zip files)
         import glob
@@ -1846,31 +1972,31 @@ class SettingsWindow(QtWidgets.QDialog):
             return None
         
     def display_skin_preview(self, skin_file, idle_frames):
-        # Создаём QLabel для отображения анимации
+        # Create a QLabel to display the animation
         animation_label = QtWidgets.QLabel()
-        original_size = 64  # Исходный размер скина (предполагается 64x64 пикселя)
-        scale_factor = 2     # Коэффициент масштабирования (например, x2 для 128x128)
+        original_size = 64  # Original skin size (assumed to be 64x64 pixels)
+        scale_factor = 2     # Scaling factor (eg x2 for 128x128)
         preview_size = original_size * scale_factor
         animation_label.setFixedSize(preview_size, preview_size)
         animation_label.setAlignment(QtCore.Qt.AlignCenter)
 
-        # Устанавливаем размер превью для сохранения чёткости пикселей
+        # Set the preview size to keep pixels sharp
         animation_label.setScaledContents(False)
 
-        # Настройка кадров анимации
-        frames = idle_frames  # Список QPixmap кадров
+        # Setting up animation frames
+        frames = idle_frames  # List of QPixmap frames
         frame_count = len(frames)
         if frame_count == 0:
             return
 
-        # Сохраняем кадры и индекс текущего кадра
+        # Save frames and current frame index
         animation_label.frames = frames
         animation_label.frame_index = 0
 
-        # Функция для обновления кадра
+        # Function to update the frame
         def update_frame():
             frame = animation_label.frames[animation_label.frame_index]
-            # Масштабируем QPixmap с использованием FastTransformation для сохранения пиксельной чёткости
+            # Scale the QPixmap using FastTransformation to maintain pixel sharpness
             scaled_frame = frame.scaled(
                 animation_label.size(),
                 QtCore.Qt.KeepAspectRatio,
@@ -1879,19 +2005,19 @@ class SettingsWindow(QtWidgets.QDialog):
             animation_label.setPixmap(scaled_frame)
             animation_label.frame_index = (animation_label.frame_index + 1) % frame_count
 
-        # Настраиваем таймер для анимации
+        # Setting up a timer for animation
         timer = QtCore.QTimer()
         timer.timeout.connect(update_frame)
-        timer.start(150)  # Интервал обновления кадров (в миллисекундах)
-        update_frame()     # Отображаем первый кадр сразу
+        timer.start(150)  # Frame refresh interval (in milliseconds)
+        update_frame()    # Display the first frame immediately
 
-        # Сохраняем таймер, чтобы он не был собран сборщиком мусора
+        # Save the timer so it won't be garbage collected
         animation_label.timer = timer
 
-        # Сохраняем ссылки для предотвращения сборки мусора
+        # Preserve references to prevent garbage collection
         self.skin_previews.append((animation_label, timer))
 
-        # Создаём виджет для удержания QLabel
+        # Create a widget to hold the QLabel
         skin_widget = QtWidgets.QWidget()
         skin_layout = QtWidgets.QVBoxLayout()
         skin_layout.setContentsMargins(0, 0, 0, 0)
@@ -1899,14 +2025,14 @@ class SettingsWindow(QtWidgets.QDialog):
         skin_widget.setLayout(skin_layout)
         skin_widget.setFixedSize(preview_size, preview_size)
 
-        # Устанавливаем tooltip с именем файла скина
+        # Set tooltip with skin file name
         skin_name = os.path.basename(skin_file)
         skin_widget.setToolTip(skin_name)
 
-        # Делаем skin_widget кликабельным для применения скина
+        # Make skin_widget clickable to apply skin
         skin_widget.mousePressEvent = lambda event, skin_file=skin_file: self.apply_skin(skin_file)
 
-        # Добавляем skin_widget в FlowLayout для автоматического переноса на новую строку
+        # Add skin_widget to FlowLayout to automatically wrap to a new line
         self.skins_layout.addWidget(skin_widget)
 
     def apply_skin(self, skin_file):
@@ -1952,11 +2078,31 @@ class SettingsWindow(QtWidgets.QDialog):
 
         # Pet Name
         pet_name_label = QtWidgets.QLabel("Pet Name:")
-        self.duck_name_edit = QtWidgets.QLineEdit()  # Changed back to 'duck_name_edit'
+        self.duck_name_edit = QtWidgets.QLineEdit()
         self.duck_name_edit.setText(self.parent.duck_name)
         self.duck_name_edit.setPlaceholderText("Enter your pet's name")
         self.duck_name_edit.setClearButtonEnabled(True)
         self.duck_name_edit.setToolTip("Enter your pet's name")
+
+        # Question mark button to display name characteristics
+        self.name_info_button = QtWidgets.QPushButton()
+        self.name_info_button.setFixedSize(20, 20)
+        self.name_info_button.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxQuestion))
+        self.name_info_button.setFlat(True)
+        self.name_info_button.setStyleSheet("QPushButton { border: none; }")
+        self.name_info_button.setToolTip("Enter name to see characteristics")
+
+        # Horizontal layout for name input field and button
+        name_layout = QtWidgets.QHBoxLayout()
+        name_layout.addWidget(self.duck_name_edit)
+        name_layout.addWidget(self.name_info_button)
+        name_layout.addStretch()
+
+        self.name_info_button.clicked.connect(self.show_name_characteristics)
+
+        # Update tooltip with characteristics when name is changed
+        self.duck_name_edit.textChanged.connect(self.update_name_info_tooltip)
+        self.update_name_info_tooltip()
 
         # Microphone selection
         mic_label = QtWidgets.QLabel("Select Microphone:")
@@ -2016,7 +2162,7 @@ class SettingsWindow(QtWidgets.QDialog):
 
         # Add widgets to layout
         layout.addWidget(pet_name_label)
-        layout.addWidget(self.duck_name_edit)
+        layout.addLayout(name_layout)
         layout.addSpacing(10)
         layout.addWidget(mic_label)
         layout.addWidget(self.mic_combo)
@@ -2102,7 +2248,7 @@ class SettingsWindow(QtWidgets.QDialog):
         # About text
         about_text = f"""
         <h2>QuackDuck | Version {PROJECT_VERSION}</h2>
-        <p>Coded with ❤ by zl0yxp</p>
+        <p>Coded with 💜 by zl0yxp</p>
         <p>Discord: zl0yxp</p>
         """
         about_label = QtWidgets.QLabel(about_text)
@@ -2161,6 +2307,24 @@ class SettingsWindow(QtWidgets.QDialog):
         layout.addStretch()
         layout.addLayout(save_cancel_layout)
 
+    def show_name_characteristics(self):
+        name = self.duck_name_edit.text()
+        if name:
+            characteristics = self.parent.get_name_characteristics(name)
+            info_text = "\n".join([f"{key}: {value}" for key, value in characteristics.items()])
+            QtWidgets.QMessageBox.information(self, "Characteristics", info_text)
+        else:
+            QtWidgets.QMessageBox.information(self, "Characteristics", "Enter a name to see the characteristics.")
+
+    def update_name_info_tooltip(self):
+        name = self.duck_name_edit.text()
+        if name:
+            characteristics = self.parent.get_name_characteristics(name)
+            tooltip_text = "\n".join([f"{key}: {value}" for key, value in characteristics.items()])
+            self.name_info_button.setToolTip(tooltip_text)
+        else:
+            self.name_info_button.setToolTip("Enter a name to see the characteristics.")
+
     def reset_to_default(self):
         # Reset settings in the parent widget
         self.parent.reset_settings_to_default()
@@ -2178,7 +2342,7 @@ class SettingsWindow(QtWidgets.QDialog):
         self.duck_name_edit.setText(self.parent.duck_name)
 
         # Optionally, show a message about the reset
-        QMessageBox.information(self, "Настройки сброшены", "Настройки были сброшены до значений по умолчанию.")
+        QMessageBox.information(self, "Settings reset", "The settings have been reset to default values.")
 
     def closeEvent(self, event):
         self.preview_thread_running = False
@@ -2219,7 +2383,7 @@ class SettingsWindow(QtWidgets.QDialog):
         options = QtWidgets.QFileDialog.Options()
         filename, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
-            "Выберите архив скина",
+            "Select skin archive",
             "",
             "Zip Archives (*.zip);;All Files (*)",
             options=options
@@ -2227,104 +2391,151 @@ class SettingsWindow(QtWidgets.QDialog):
         if filename:
             success = self.parent.load_skin(filename)
             if success:
-                QMessageBox.information(self, "Успех", "Скин успешно загружен.")
+                QMessageBox.information(self, "Success", "Skin loaded successfully.")
             else:
-                QMessageBox.warning(self, "Ошибка", "Не удалось загрузить скин.")
+                QMessageBox.warning(self, "Error", "Failed to load skin.")
 
     def save_settings(self):
-        # Save microphone selection
-        self.parent.selected_input_device_index = self.mic_combo.currentData()
-        # Restart the microphone listener thread
-        self.parent.microphone_listener.stop()
-        self.parent.microphone_listener.wait()
-        self.parent.microphone_listener = MicrophoneListener(self.parent.selected_input_device_index, self.parent.mic_sensitivity)
-        self.parent.microphone_listener.volume_signal.connect(self.parent.on_volume_updated)
-        self.parent.microphone_listener.start()
+        """
+        Save the settings from the SettingsWindow back to the main DuckWidget.
+        This includes microphone settings, appearance settings, behavior settings, and the duck's name.
+        """
+        try:
+            # Save microphone selection
+            self.parent.selected_input_device_index = self.mic_combo.currentData()
 
-        # Save microphone sensitivity
-        self.parent.mic_sensitivity = self.sensitivity_slider.value()
+            # Restart the microphone listener thread with the new settings
+            self.parent.microphone_listener.stop()
+            self.parent.microphone_listener.wait()
+            self.parent.microphone_listener = MicrophoneListener(
+                self.parent.selected_input_device_index,
+                self.parent.mic_sensitivity
+            )
+            self.parent.microphone_listener.volume_signal.connect(self.parent.on_volume_updated)
+            self.parent.microphone_listener.start()
 
-        # Save skins folder path
-        if hasattr(self, 'skins_folder_path'):
-            self.parent.skins_folder_path = self.skins_folder_path
+            # Save microphone sensitivity
+            self.parent.mic_sensitivity = self.sensitivity_slider.value()
 
-        # Save floor level
-        if self.floor_default_checkbox.isChecked():
-            self.parent.floor_level = 40  # Reset to default
-            self.parent.floor_default = True
-        else:
-            self.parent.floor_level = self.floor_spinbox.value()
-            self.parent.floor_default = False
+            # Save skins folder path
+            if hasattr(self, 'skins_folder_path'):
+                self.parent.skins_folder_path = self.skins_folder_path
 
-        # Save duck size
-        self.parent.scale_factor = self.size_combo.currentData()
-        old_duck_width = self.parent.current_frame.width()
-        old_duck_height = self.parent.current_frame.height()
+            # Save floor level
+            if self.floor_default_checkbox.isChecked():
+                self.parent.floor_level = 40  # Reset to default
+                self.parent.floor_default = True
+            else:
+                self.parent.floor_level = self.floor_spinbox.value()
+                self.parent.floor_default = False
 
-        self.parent.load_sprites()  # Reload sprites with new size
+            # Save duck size (scale factor)
+            self.parent.scale_factor = self.size_combo.currentData()
 
-        new_duck_width = self.parent.current_frame.width()
-        new_duck_height = self.parent.current_frame.height()
+            # Apply new skin size by reloading sprites
+            old_duck_width = self.parent.current_frame.width()
+            old_duck_height = self.parent.current_frame.height()
 
-        # Adjust duck position based on size and floor level
-        height_difference = new_duck_height - old_duck_height
-        self.parent.duck_y -= height_difference
+            self.parent.load_sprites()  # Reload sprites with new scale factor
 
-        desired_floor_y = self.parent.get_floor_level()
-        self.parent.duck_y = desired_floor_y
+            new_duck_width = self.parent.current_frame.width()
+            new_duck_height = self.parent.current_frame.height()
 
-        # Ensure duck stays within screen bounds
-        if self.parent.duck_y + new_duck_height > self.parent.screen_height:
-            self.parent.duck_y = self.parent.screen_height - new_duck_height
-        if self.parent.duck_y < 0:
-            self.parent.duck_y = 0
+            # Adjust duck position based on size change and floor level
+            height_difference = new_duck_height - old_duck_height
+            self.parent.duck_y -= height_difference
 
-        if self.parent.duck_x + new_duck_width > self.parent.screen_width:
-            self.parent.duck_x = self.parent.screen_width - new_duck_width
-        if self.parent.duck_x < 0:
-            self.parent.duck_x = 0
+            desired_floor_y = self.parent.get_floor_level()
+            self.parent.duck_y = desired_floor_y
 
-        self.parent.resize(new_duck_width, new_duck_height)
-        self.parent.move(int(self.parent.duck_x), int(self.parent.duck_y))
-        self.parent.update()
+            # Ensure duck stays within screen bounds
+            if self.parent.duck_y + new_duck_height > self.parent.screen_height:
+                self.parent.duck_y = self.parent.screen_height - new_duck_height
+            if self.parent.duck_y < 0:
+                self.parent.duck_y = 0
 
-        # Save sound setting
-        self.parent.sound_enabled = self.sound_checkbox.isChecked()
+            if self.parent.duck_x + new_duck_width > self.parent.screen_width:
+                self.parent.duck_x = self.parent.screen_width - new_duck_width
+            if self.parent.duck_x < 0:
+                self.parent.duck_x = 0
 
-        # Save autostart setting
-        if self.autostart_checkbox.isChecked():
-            self.parent.enable_autostart()
-        else:
-            self.parent.disable_autostart()
+            # Resize and reposition the duck widget
+            self.parent.resize(new_duck_width, new_duck_height)
+            self.parent.move(int(self.parent.duck_x), int(self.parent.duck_y))
+            self.parent.update()
 
-        # Save Duck Stuck Bug setting
-        self.parent.duck_stuck_bug = self.duck_stuck_checkbox.isChecked()
+            # Save sound enabled setting
+            self.parent.sound_enabled = self.sound_checkbox.isChecked()
 
-        # Save duck name
-        self.parent.duck_name = self.duck_name_edit.text()
+            # Save autostart setting
+            if self.autostart_checkbox.isChecked():
+                self.parent.enable_autostart()
+            else:
+                self.parent.disable_autostart()
 
-        # Regenerate parameters if duck name changed
-        if self.parent.duck_name:
-            self.parent.seed = get_seed_from_name(self.parent.duck_name)
-            self.parent.random_gen = random.Random(self.parent.seed)
-            self.parent.generate_parameters()
-        else:
-            # Use default parameters
-            self.parent.random_gen = random.Random()
-            self.parent.movement_speed = 2
-            self.parent.animation_speed = 100
-            self.parent.sound_interval = random.randint(120000, 600000) / 1000  # in seconds
-            self.parent.sound_response_chance = 0.01
-            self.parent.playful_chance = 0.1
-            self.parent.sleep_timeout = 300  # in seconds
+            # Save Duck Stuck Bug setting
+            self.parent.duck_stuck_bug = self.duck_stuck_checkbox.isChecked()
 
-        # Restart animation timer with new animation speed
-        self.parent.animation_timer.start(int(self.parent.animation_speed))
+            # Save duck name
+            self.parent.duck_name = self.duck_name_edit.text()
+            self.parent.update_duck_name()
 
-        # Save settings to QSettings
-        self.parent.save_settings()
+            # Regenerate parameters if duck name changed
+            if self.parent.duck_name:
+                self.parent.seed = get_seed_from_name(self.parent.duck_name)
+                self.parent.random_gen = random.Random(self.parent.seed)
+                self.parent.generate_parameters()
+            else:
+                # Use default parameters
+                self.parent.seed = None
+                self.parent.random_gen = random.Random()
+                self.parent.movement_speed = 2
+                self.parent.animation_speed = 100
+                self.parent.sound_interval_min = 120  # Minimum interval in seconds
+                self.parent.sound_interval_max = 600  # Maximum interval in seconds
+                self.parent.sound_response_chance = 0.01
+                self.parent.playful_chance = 0.1
+                self.parent.sleep_timeout = 300  # in seconds
 
-        self.close()
+            # Reset frame indices to ensure animations start correctly
+            self.parent.frame_index = 0
+            self.parent.jump_index = 0
+            self.parent.idle_frame_index = 0
+            self.parent.sleep_frame_index = 0
+            self.parent.listen_frame_index = 0
+            self.parent.fall_frame_index = 0
+            self.parent.land_frame_index = 0
+
+            # Set current_frame to a valid frame
+            if self.parent.idle_frames:
+                if self.parent.duck_direction < 0:
+                    self.parent.current_frame = self.parent.idle_frames[0].transformed(
+                        QtGui.QTransform().scale(-1, 1)
+                    )
+                else:
+                    self.parent.current_frame = self.parent.idle_frames[0]
+                self.parent.update()
+            else:
+                # Handle case when idle_frames is empty (optional: set to a default frame or handle gracefully)
+                pass
+
+            # Restart animation timer with new animation speed
+            self.parent.animation_timer.start(int(self.parent.animation_speed))
+
+            # Save all settings to QSettings
+            self.parent.save_settings()
+
+            # Close the settings window
+            self.close()
+
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error saving settings",
+                f"There was an error saving settings:\n{e}",
+                QtWidgets.QMessageBox.Ok
+            )
+            print(f"Exception in save_settings: {e}")
 
 def main():
     # Initialize application
@@ -2350,6 +2561,8 @@ def main():
     dark_palette.setColor(QtGui.QPalette.Highlight, QtGui.QColor(0, 120, 215))
     dark_palette.setColor(QtGui.QPalette.HighlightedText, QtCore.Qt.black)
     app.setPalette(dark_palette)
+
+    sys.excepthook = exception_handler
 
     try:
         icon_path = resource_path("duck_icon.png")
