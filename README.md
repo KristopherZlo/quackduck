@@ -54,48 +54,50 @@ To run QuackDuck on your system, follow these steps:
 ### Version 1.4.0
 
 ### Debug:
-- ✅ Pet wakes up when jumping
-- ✅ Pet wakes up when entering "playful" state
-- ✅ Fixed jump animation / Removed infinite looping
-- ✅ Skins are not deleted from the user's folder
+- ✅ Pet wakes up when jumping  
+- ✅ Pet wakes up upon entering the "playful" state  
+- ✅ Fixed jump animation / Resolved infinite looping  
+- ✅ Skins are not deleted from the users' folder  
 
 ### Visual:
-- ✅ Cursor changes to pointer when hovering over the pet
-- ✅ Cursor changes to pointer when hovering over menu buttons
-- 🛠 Display the pet's name when hovering over it
+- ✅ Changed cursor to interaction pointer when hovering over the pet  
+- ✅ Changed cursor to interaction pointer when hovering over menu buttons  
+- ✅ Display pet's name when hovering over it 
 
-### New attributes for skins:
-- ⁉️ Optional sleep sound
-- ✅ Ability to use multiple sounds (optional attribute)
-- 🛠 Climb attribute for allowing the pet to climb the edges of the screen
-- ⏳ Ability to add animations for the climb attribute
-- ⏳ Ability to spawn a sleeping bag for the pet if there is a corresponding sprite
-- ⏳ Ability to add a running animation (run + animation)
-- ⏳ Random event where the pet starts running instead of walking for a short time
-- ✅ Ability to add a falling animation (optional attribute)
-- ✅ Ability to add a landing animation (optional attribute)
+### New Attributes for Skins:
+- ⁉️ Optional sound for sleep  
+- ✅ Ability to use multiple sounds (optional attribute)  
+- ⏳ Attribute allowing the pet to climb the edges of the screen (climb attribute)  
+- ⏳ Ability to add animations for the climb attribute  
+- ⏳ Ability to spawn a sleeping spot for the pet (sleeping bag spawn) if there is a corresponding sprite  
+- ⏳ Ability to add running animation (run + animation)  
+- ⏳ Random event where the pet starts running instead of walking for a while  
+- ✅ Ability to add falling animation (optional attribute)  
+- ✅ Ability to add landing animation (optional attribute)  
 
-### Pet behavior and functionality:
-- ✅ Ability to set the pet's name
-- ✅ Play and sleep timing depends on the pet's name
-- ✅ Random actions in the "idle" state (e.g., cat licking)
-- ⏳ Support for random emoji events in clouds, showing that the pet is trying to talk
-- ⏳ Support for random emoji events during sleep
-- ⏳ Cursor attack animation if the cursor is moved around the pet for too long
+### Pet Behavior and Functionality:
+- ✅ Ability to set the pet's name  
+- ✅ Timing for play and sleep depends on the pet's name  
+- ✅ Random actions in the "idle" state (e.g., cat licking)  
+- ⏳ Support for random events with emojis in clouds, making the pet appear as if it's trying to speak  
+- ⏳ Support for random events with emojis during sleep  
+- ⏳ Cursor attack animation if moved near the pet for a long time  
 
-### Tasks in development:
-- ✅ New, more modern settings menu
-- ⏳ Debug menu to view pet attributes
+### Tasks in Development:
+- ✅ New, more modern settings menu  
+- ✅ Debug menu that allows viewing the pet's attributes  
+- ✅ "Skins" tab in the menu, where previews of all skins from the specified folder will be  
+- ⏳ Sounds when clicking on the pet  
 
-### Future development plans:
-- ⏳ Add support for Linux and macOS
-- ⏳ Develop a website for downloading skins
-- ⏳ Update the license file
-- ⏳ Create a list for function testing
-- ⏳ Add program information to "Properties"
-- ⏳ Update electronic signatures
-- ⁉️ Force the program to run as administrator
-- ⁉️ Create an installer with a desktop shortcut
+### Development Plans:
+- ⏳ Add support for Linux and macOS  
+- ⏳ Develop a website for uploading skins  
+- ⏳ Update the license file  
+- ⏳ Create a list for function testing  
+- ⏳ Add program information to "properties"  
+- ⏳ Update digital signatures  
+- ⁉️ Force run as administrator  
+- ⁉️ Create a program installer with a desktop shortcut
 
 ## Pre-made Skins
 
