@@ -1834,41 +1834,79 @@ class SettingsWindow(QtWidgets.QDialog):
             self.skins_folder_path_label.setText(f"Skins Folder: {folder}")
             self.load_skins_from_folder(folder)
 
-    def display_skin_preview(self, skin_file, idle_frames, row, col):
-        # Create a label to display the animation
+    def display_skin_preview(self, skin_file, idle_frames):
+        """
+        Displays a skin preview in the settings interface.
+
+        Args:
+            skin_file (str): Path to the skin file (.zip archive).
+            idle_frames (List[QPixmap]): List of frames for the idle animation.
+        """
+        # Create a QLabel to display the animation
         animation_label = QtWidgets.QLabel()
-        animation_label.setFixedSize(64, 64)
+        original_size = 64  # Original skin size (assumed to be 64x64 pixels)
+        scale_factor = 2     # Scaling factor (e.g., x2 for 128x128)
+        preview_size = original_size * scale_factor
+        animation_label.setFixedSize(preview_size, preview_size)
         animation_label.setAlignment(QtCore.Qt.AlignCenter)
 
-        # Create a QMovie for the animation
-        movie = QtGui.QMovie(idle_frames[0])  # Assuming idle_frames[0] is a GIF
-        movie.setCacheMode(QtGui.QMovie.CacheAll)
-        movie.setSpeed(100)
-        movie.setScaledSize(QtCore.QSize(64, 64))
-        # Start the movie
-        animation_label.setMovie(movie)
-        movie.start()
-        # Store the movie to prevent it from being garbage collected
-        self.skin_previews.append((movie, skin_file))
+        # Set the preview size to keep pixels sharp
+        animation_label.setScaledContents(False)
 
-        # Add a label underneath with the skin name
-        skin_name = os.path.basename(skin_file)
-        skin_name_label = QtWidgets.QLabel(skin_name)
-        skin_name_label.setAlignment(QtCore.Qt.AlignCenter)
-        skin_name_label.setStyleSheet("font-size: 10pt; color: #ffffff;")
+        # Setup animation frames
+        frames = idle_frames  # List of QPixmap frames
+        frame_count = len(frames)
+        if frame_count == 0:
+            return  # Exit the method if there are no frames
 
-        # Create a vertical layout for each skin preview
-        skin_layout = QtWidgets.QVBoxLayout()
-        skin_layout.addWidget(animation_label)
-        skin_layout.addWidget(skin_name_label)
+        # Save the list of frames and the current frame index in QLabel for access in the update function
+        animation_label.frames = frames
+        animation_label.frame_index = 0
 
-        # Create a widget to hold the layout
+        # Function to update the frame
+        def update_frame():
+            if frame_count == 0:
+                return  # Additional check in case there are no frames
+            frame = animation_label.frames[animation_label.frame_index]
+            # Scale the QPixmap using FastTransformation to maintain sharp pixels
+            scaled_frame = frame.scaled(
+                animation_label.size(),
+                QtCore.Qt.KeepAspectRatio,
+                QtCore.Qt.FastTransformation
+            )
+            animation_label.setPixmap(scaled_frame)
+            # Update the frame index for the next display
+            animation_label.frame_index = (animation_label.frame_index + 1) % frame_count
+
+        # Setup a timer for the animation
+        timer = QtCore.QTimer()
+        timer.timeout.connect(update_frame)
+        timer.start(150)  # Frame refresh interval in milliseconds (approximately 6 FPS)
+        update_frame()    # Immediately display the first frame
+
+        # Save the timer as an attribute of QLabel to prevent it from being garbage collected
+        animation_label.timer = timer
+
+        # Preserve references to prevent garbage collection
+        self.skin_previews.append((animation_label, timer))
+
+        # Create a widget to hold the QLabel with the animation
         skin_widget = QtWidgets.QWidget()
+        skin_layout = QtWidgets.QVBoxLayout()
+        skin_layout.setContentsMargins(0, 0, 0, 0)
+        skin_layout.addWidget(animation_label)
         skin_widget.setLayout(skin_layout)
-        # Make the skin_widget clickable
+        skin_widget.setFixedSize(preview_size, preview_size)
+
+        # Set tooltip with the skin file name
+        skin_name = os.path.basename(skin_file)
+        skin_widget.setToolTip(skin_name)
+
+        # Make skin_widget clickable to apply the skin when clicked
         skin_widget.mousePressEvent = lambda event, skin_file=skin_file: self.apply_skin(skin_file)
-        # Add the skin_widget to the grid layout
-        self.skins_layout.addWidget(skin_widget, row, col)
+
+        # Add skin_widget to FlowLayout to automatically wrap to a new line when necessary
+        self.skins_layout.addWidget(skin_widget)
 
     def load_skins_from_folder(self, folder):
         for animation_label, timer in self.skin_previews:
