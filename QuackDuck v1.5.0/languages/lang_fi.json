@@ -58,5 +58,7 @@
     "warning_title": "Varoitus",
     "no_skins_in_folder": "Valitussa kansiossa ei ole ulkoasuja.",
     "skin_applied_successfully": "Ulkoasu sovellettu onnistuneesti:",
-    "failed_apply_skin": "Ulkoasun soveltaminen epäonnistui:"
+    "failed_apply_skin": "Ulkoasun soveltaminen epäonnistui:",
+    "folder_not_found": "Määritettyä skin-kansiota ei ole olemassa:",
+    "language_selection": "Kieli:"
 }

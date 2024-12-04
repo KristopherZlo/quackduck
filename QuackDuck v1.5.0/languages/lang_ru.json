@@ -58,5 +58,7 @@
     "warning_title": "Предупреждение",
     "no_skins_in_folder": "В выбранной папке нет скинов.",
     "skin_applied_successfully": "Скин успешно применен:",
-    "failed_apply_skin": "Не удалось применить скин:"
+    "failed_apply_skin": "Не удалось применить скин:",
+    "folder_not_found": "Указанная папка скинов не существует:",
+    "language_selection": "Язык:"
 }

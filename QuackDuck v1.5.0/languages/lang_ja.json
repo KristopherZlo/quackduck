@@ -58,5 +58,7 @@
     "warning_title": "警告",
     "no_skins_in_folder": "選択したフォルダーにスキンがありません。",
     "skin_applied_successfully": "スキンが正常に適用されました：",
-    "failed_apply_skin": "スキンの適用に失敗しました："
+    "failed_apply_skin": "スキンの適用に失敗しました：",
+    "folder_not_found": "指定されたスキンフォルダが存在しません:",
+    "language_selection": "言語:"
 }

@@ -58,5 +58,7 @@
     "warning_title": "경고",
     "no_skins_in_folder": "선택한 폴더에 스킨이 없습니다.",
     "skin_applied_successfully": "스킨이 성공적으로 적용되었습니다:",
-    "failed_apply_skin": "스킨 적용에 실패했습니다:"
+    "failed_apply_skin": "스킨 적용에 실패했습니다:",
+    "folder_not_found": "지정된 스킨 폴더가 존재하지 않습니다:",
+    "language_selection": "언어:"
 }

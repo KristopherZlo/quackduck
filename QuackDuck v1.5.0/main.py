@@ -9,11 +9,14 @@ import hashlib
 import time
 import traceback
 import platform
+import shutil
 import logging
+import requests
 
 from abc import ABC, abstractmethod
 
 from PyQt5 import QtWidgets, QtGui, QtCore, QtMultimedia
+from PyQt5.QtMultimedia import QSoundEffect
 from PyQt5.QtWidgets import (
     QApplication, QDialog, QHBoxLayout, QVBoxLayout, QWidget,
     QListWidget, QLabel, QPushButton, QStackedWidget, QLineEdit,
@@ -695,6 +698,16 @@ class SleepingState(State):
         self.frame_index = 0
         self.update_frame()
 
+        # Start the wake-up timer
+        self.wake_up_timer = QtCore.QTimer()
+        self.wake_up_timer.setSingleShot(True)
+        random_interval = random.randint(900000, 3600000)
+        # Test interval timer before waking up:
+        # random_interval = 30000
+        self.wake_up_timer.timeout.connect(self.wake_up)
+        self.wake_up_timer.start(random_interval)
+        logging.info(f"SleepingState: Wake up timer started for {random_interval / 1000} seconds.")
+
     def update_animation(self):
         if self.frames:
             self.frame_index = (self.frame_index + 1) % len(self.frames)
@@ -704,7 +717,11 @@ class SleepingState(State):
         pass
 
     def exit(self):
-        pass
+        # Stopping the wakeup timer when exiting a state
+        if hasattr(self, 'wake_up_timer') and self.wake_up_timer.isActive():
+            self.wake_up_timer.stop()
+            self.wake_up_timer = None
+            logging.info("SleepingState: Таймер пробуждения остановлен.")
 
     def update_frame(self):
         if self.frames:
@@ -717,6 +734,11 @@ class SleepingState(State):
             self.duck.change_state(DraggingState(self.duck), event)
         else:
             super().handle_mouse_press(event)
+
+    def wake_up(self):
+        logging.info("SleepingState: The wake-up timer has expired, the duck is waking up.")
+        self.duck.last_interaction_time = time.time()
+        self.duck.change_state(WalkingState(self.duck))
 
 class IdleState(State):
     def __init__(self, duck):
@@ -851,14 +873,17 @@ class PlayfulState(State):
             self.duck.update()
 
 class ResourceManager:
-    def __init__(self):
+    def __init__(self, scale_factor, pet_size=3):
         self.assets_dir = resource_path('assets')
         self.skins_dir = os.path.join(self.assets_dir, 'skins')
         self.current_skin = 'default'
+        self.current_skin_temp_dir = None  # Store the path to the temporary directory for the current skin
         self.animations = {}
         self.sounds = []
-        self.scale_factor = 3
+        self.scale_factor = scale_factor
+        self.pet_size = pet_size  # Pet size scaling
 
+        # Default animations configuration
         self.default_animations_config = {
             "idle": ["0:0"],
             "walk": ["1:0", "1:1", "1:2", "1:3", "1:4", "1:5"],
@@ -869,151 +894,194 @@ class ResourceManager:
             "sleep_transition": ["2:1"]
         }
 
+        # Load the default skin upon initialization
         self.load_default_skin()
 
+    def set_pet_size(self, pet_size):
+        self.pet_size = pet_size
+        self.load_sprites()
+
     def load_idle_frames_from_skin(self, skin_file):
+        """
+        Load idle frames from a skin archive for preview purposes.
+        """
         try:
             with zipfile.ZipFile(skin_file, 'r') as zip_ref:
                 if 'config.json' not in zip_ref.namelist():
                     logging.error(f"Skin {skin_file} does not contain config.json.")
                     return None
 
-                temp_dir = tempfile.mkdtemp()
-                zip_ref.extractall(temp_dir)
+                # Use TemporaryDirectory to ensure the temp directory is cleaned up
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    logging.info(f"Temporary skin files extracted to: {temp_dir}")
+                    zip_ref.extractall(temp_dir)
 
-                config_path = os.path.join(temp_dir, 'config.json')
-                with open(config_path, 'r') as f:
-                    config = json.load(f)
+                    config_path = os.path.join(temp_dir, 'config.json')
+                    with open(config_path, 'r') as f:
+                        config = json.load(f)
 
-                animations = config.get('animations', {})
-                idle_animation_keys = [key for key in animations.keys() if key.startswith('idle')]
-                if not idle_animation_keys:
-                    logging.error(f"No idle animation in {skin_file}.")
-                    return None
+                    animations = config.get('animations', {})
+                    idle_animation_keys = [key for key in animations.keys() if key.startswith('idle')]
+                    if not idle_animation_keys:
+                        logging.error(f"No idle animation in {skin_file}.")
+                        return None
 
-                idle_animation_key = idle_animation_keys[0]
-                frame_list = animations[idle_animation_key]
+                    idle_animation_key = idle_animation_keys[0]
+                    frame_list = animations[idle_animation_key]
 
-                spritesheet_name = config.get('spritesheet')
-                frame_width = config.get('frame_width')
-                frame_height = config.get('frame_height')
-                if not spritesheet_name or not frame_width or not frame_height:
-                    logging.error(f"Config file is not complete {skin_file}.")
-                    return None
+                    spritesheet_name = config.get('spritesheet')
+                    frame_width = config.get('frame_width')
+                    frame_height = config.get('frame_height')
+                    if not spritesheet_name or not frame_width or not frame_height:
+                        logging.error(f"Config file is incomplete in {skin_file}.")
+                        return None
 
-                spritesheet_path = os.path.join(temp_dir, spritesheet_name)
+                    spritesheet_path = os.path.join(temp_dir, spritesheet_name)
 
-                spritesheet = QtGui.QPixmap(spritesheet_path)
-                frames = []
-                for frame_str in frame_list:
-                    row_col = frame_str.split(':')
-                    if len(row_col) == 2:
-                        try:
-                            row = int(row_col[0])
-                            col = int(row_col[1])
-                            frame = spritesheet.copy(col * frame_width, row * frame_height, frame_width, frame_height)
-                            frames.append(frame)
-                        except ValueError:
-                            logging.error(f"Incorrect frame format: {frame_str}")
-                return frames
+                    spritesheet = QtGui.QPixmap(spritesheet_path)
+                    frames = []
+                    for frame_str in frame_list:
+                        row_col = frame_str.split(':')
+                        if len(row_col) == 2:
+                            try:
+                                row = int(row_col[0])
+                                col = int(row_col[1])
+                                frame = spritesheet.copy(col * frame_width, row * frame_height, frame_width, frame_height)
+                                frames.append(frame)
+                            except ValueError:
+                                logging.error(f"Incorrect frame format: {frame_str}")
+                    # The temporary directory is automatically cleaned up here
+                    return frames
         except Exception as e:
             logging.error(f"Failed to load skin {skin_file}: {e}")
             return None
 
     def get_idle_animations(self):
+        """
+        Get a list of idle animation names.
+        """
         return [name for name in self.animations.keys() if name.startswith('idle')]
 
     def load_default_skin(self):
+        """
+        Load the default skin and its resources.
+        """
+        # Clean up any previous temporary directory
+        self.cleanup_temp_dir()
+        self.current_skin = 'default'
         skin_path = os.path.join(self.skins_dir, 'default')
         self.spritesheet_path = os.path.join(skin_path, 'spritesheet.png')
         self.frame_width = 32
         self.frame_height = 32
         self.animations_config = self.default_animations_config.copy()
-        self.sound_files = [os.path.join(skin_path, 'wuak.mp3')]
+        self.sound_files = [os.path.join(skin_path, 'wuak.wav')]  # Use the default sound file
         self.load_sprites()
         self.load_sounds()
 
-    def load_skin(self, skin_path):
-        if os.path.isfile(skin_path) and skin_path.endswith('.zip'):
+    def load_skin(self, skin_file):
+        """
+        Load a custom skin from a zip archive.
+        """
+        # Clean up any previous temporary directory
+        self.cleanup_temp_dir()
+
+        if os.path.isfile(skin_file) and skin_file.endswith('.zip'):
             try:
-                skin_name = os.path.splitext(os.path.basename(skin_path))[0]
-                skin_dir = os.path.join(self.skins_dir, skin_name)
-                if not os.path.exists(skin_dir):
-                    os.makedirs(skin_dir)
-                    with zipfile.ZipFile(skin_path, 'r') as zip_ref:
-                        zip_ref.extractall(skin_dir)
+                with zipfile.ZipFile(skin_file, 'r') as zip_ref:
+                    if 'config.json' not in zip_ref.namelist():
+                        logging.error(f"Skin {skin_file} does not contain config.json.")
+                        self.load_default_skin()
+                        return False
+
+                    # Create a new temporary directory for this skin
+                    temp_dir = tempfile.mkdtemp()
+                    self.current_skin_temp_dir = temp_dir  # Store it to clean up later
+                    logging.info(f"Temporary skin files extracted to: {temp_dir}")
+                    zip_ref.extractall(temp_dir)
+
+                    config_path = os.path.join(temp_dir, 'config.json')
+                    with open(config_path, 'r') as f:
+                        config = json.load(f)
+
+                    spritesheet_name = config.get('spritesheet')
+                    frame_width = config.get('frame_width')
+                    frame_height = config.get('frame_height')
+                    animations = config.get('animations', {})
+
+                    if not spritesheet_name or not frame_width or not frame_height:
+                        logging.error("Config file is incomplete.")
+                        self.load_default_skin()
+                        return False
+
+                    spritesheet_path = os.path.join(temp_dir, spritesheet_name)
+                    if not os.path.exists(spritesheet_path):
+                        logging.error(f"Spritesheet {spritesheet_name} does not exist.")
+                        self.load_default_skin()
+                        return False
+
+                    sound_names = config.get('sound', [])
+                    if isinstance(sound_names, str):
+                        sound_names = [sound_names]
+
+                    sound_paths = []
+                    for sound_name in sound_names:
+                        sound_path = os.path.join(temp_dir, sound_name)
+                        if os.path.exists(sound_path) and sound_name.endswith('.wav'):
+                            sound_paths.append(sound_path)
+                        else:
+                            logging.warning(f"Sound file {sound_name} is not in WAV format or does not exist.")
+
+                    # Set the paths and configurations
+                    self.spritesheet_path = spritesheet_path
+                    self.sound_files = sound_paths
+                    self.frame_width = frame_width
+                    self.frame_height = frame_height
+                    self.animations_config = animations
+
+                    # Load the sprites and sounds
+                    self.load_sprites()
+                    self.load_sounds()
+
+                    self.current_skin = skin_file
+
+                    return True
             except Exception as e:
-                logging.error(f"Error extracting skin: {e}")
+                logging.error(f"Failed to load skin {skin_file}: {e}")
                 self.load_default_skin()
                 return False
-        elif os.path.isdir(skin_path):
-            skin_dir = skin_path
-            skin_name = os.path.basename(skin_dir)
         else:
+            logging.error(f"Invalid skin file: {skin_file}")
             self.load_default_skin()
             return False
 
-        json_path = os.path.join(skin_dir, 'config.json')
-        if not os.path.exists(json_path):
-            self.load_default_skin()
-            return False
-
-        try:
-            with open(json_path, 'r') as f:
-                config = json.load(f)
-            spritesheet_name = config.get('spritesheet')
-            frame_width = config.get('frame_width')
-            frame_height = config.get('frame_height')
-            animations = config.get('animations', {})
-
-            if not spritesheet_name or not frame_width or not frame_height:
-                self.load_default_skin()
-                return False
-
-            spritesheet_path = os.path.join(skin_dir, spritesheet_name)
-            if not os.path.exists(spritesheet_path):
-                self.load_default_skin()
-                return False
-
-            sound_names = config.get('sound', [])
-            if isinstance(sound_names, str):
-                sound_names = [sound_names]
-
-            sound_paths = []
-            for sound_name in sound_names:
-                sound_path = os.path.join(skin_dir, sound_name)
-                if os.path.exists(sound_path):
-                    sound_paths.append(sound_path)
-
-            self.spritesheet_path = spritesheet_path
-            self.sound_files = sound_paths
-            self.frame_width = frame_width
-            self.frame_height = frame_height
-            self.animations_config = animations
-
-            self.load_sprites()
-            self.load_sounds()
-
-            self.current_skin = skin_name
-
-            return True
-
-        except Exception as e:
-            logging.error(f"Error loading skin: {e}")
-            self.load_default_skin()
-            return False
+    def cleanup_temp_dir(self):
+        """
+        Clean up the temporary directory used for the current skin.
+        """
+        if self.current_skin_temp_dir and os.path.exists(self.current_skin_temp_dir):
+            try:
+                shutil.rmtree(self.current_skin_temp_dir)
+                logging.info(f"Temporary skin directory {self.current_skin_temp_dir} removed.")
+            except Exception as e:
+                logging.error(f"Failed to remove temporary skin directory {self.current_skin_temp_dir}: {e}")
+            self.current_skin_temp_dir = None
 
     def load_sprites(self):
+        """
+        Load and scale the spritesheet frames according to the animations configuration.
+        """
         if not os.path.exists(self.spritesheet_path):
+            logging.error(f"Spritesheet path does not exist: {self.spritesheet_path}")
             return
 
         spritesheet = QtGui.QPixmap(self.spritesheet_path)
         if spritesheet.isNull():
+            logging.error(f"Failed to load spritesheet image: {self.spritesheet_path}")
             return
 
         frame_width = self.frame_width
         frame_height = self.frame_height
-        scale_factor = self.scale_factor
+        scale_factor = self.scale_factor * (self.pet_size / 3)  # Normalize pet size to 3
 
         def get_frame(row, col):
             frame = spritesheet.copy(col * frame_width, row * frame_height, frame_width, frame_height)
@@ -1031,8 +1099,12 @@ class ResourceManager:
         for anim_name, frame_list in self.animations_config.items():
             frames = self.get_animation_frames(get_frame, frame_list)
             self.animations[anim_name] = frames
+            logging.info(f"Loaded animation '{anim_name}' with {len(frames)} frames.")
 
     def get_animation_frames(self, get_frame_func, frame_list):
+        """
+        Get the frames for a specific animation.
+        """
         frames = []
         for frame_str in frame_list:
             row_col = frame_str.split(':')
@@ -1048,18 +1120,31 @@ class ResourceManager:
         return frames
 
     def load_sounds(self):
+        """
+        Load the sound files for the current skin.
+        """
         self.sounds = self.sound_files.copy()
+        logging.info(f"Loaded {len(self.sounds)} sound files.")
 
     def get_animation_frames_by_name(self, animation_name):
+        """
+        Get frames for a given animation name.
+        """
         return self.animations.get(animation_name, [])
 
     def get_animation_frame(self, animation_name, frame_index):
+        """
+        Get a specific frame from an animation.
+        """
         frames = self.get_animation_frames_by_name(animation_name)
         if frames and 0 <= frame_index < len(frames):
             return frames[frame_index]
         return None
 
     def get_default_frame(self):
+        """
+        Get the default frame to display.
+        """
         frame = self.get_animation_frame('idle', 0)
         if frame:
             return frame
@@ -1069,7 +1154,16 @@ class ResourceManager:
         return None
 
     def get_random_sound(self):
+        """
+        Get a random sound file path.
+        """
         return random.choice(self.sounds) if self.sounds else None
+
+    def __del__(self):
+        """
+        Destructor to clean up the temporary directory when the ResourceManager is deleted.
+        """
+        self.cleanup_temp_dir()
 
 class MicrophoneListener(QtCore.QThread):
     volume_signal = QtCore.pyqtSignal(int)
@@ -1134,13 +1228,24 @@ class Duck(QtWidgets.QWidget):
     """
     def __init__(self):
         super().__init__()
-        self.resources = ResourceManager()
         self.settings = QtCore.QSettings('zl0yxp', 'QuackDuck')
         self.load_settings()
+
+        # Initialize scale factor
+        self.scale_factor = self.get_scale_factor()
+
+        # Initialize pet size
+        self.pet_size = self.settings.value('pet_size', type=int, defaultValue=3)
+
+        # Pass scale_factor and pet_size to ResourceManager
+        self.resources = ResourceManager(self.scale_factor, self.pet_size)
 
         self.cursor_positions = []
         self.cursor_shake_timer = QtCore.QTimer()
         self.cursor_shake_timer.timeout.connect(self.check_cursor_shake)
+
+        self.sound_effect = QtMultimedia.QSoundEffect()
+        self.sound_effect.setVolume(0.5)
 
         # Initialize attributes from settings
         self.selected_mic_index = self.settings.value('selected_mic_index', type=int, defaultValue=None)
@@ -1149,15 +1254,13 @@ class Duck(QtWidgets.QWidget):
         self.autostart_enabled = self.settings.value('autostart_enabled', type=bool, defaultValue=True)
         self.playful_behavior_probability = self.settings.value('playful_behavior_probability', type=float, defaultValue=0.1)
         self.ground_level_setting = self.settings.value('ground_level', type=int, defaultValue=0)
-        self.pet_size = self.settings.value('pet_size', type=int, defaultValue=3)
         self.skin_folder = self.settings.value('skin_folder', type=str, defaultValue=None)
         self.selected_skin = self.settings.value('selected_skin', type=str, defaultValue=None)
         self.base_duck_speed = self.settings.value('duck_speed', type=float, defaultValue=2.0)
-        self.duck_speed = self.base_duck_speed * self.pet_size
+        self.duck_speed = self.base_duck_speed * (self.pet_size / 3)
         self.random_behavior = self.settings.value('random_behavior', type=bool, defaultValue=True)
         self.idle_duration = self.settings.value('idle_duration', type=float, defaultValue=5.0)  # Idle duration in seconds
         self.direction_change_interval = self.settings.value('direction_change_interval', type=float, defaultValue=20.0)
-        # self.listening_scheduled = False
         self.is_listening = False
         self.listening_entry_timer = None
         self.listening_exit_timer = None
@@ -1189,16 +1292,16 @@ class Duck(QtWidgets.QWidget):
         # Initialize Ground_level
         self.ground_level = self.get_ground_level()
 
-        # We initialize the condition of the duck before the Apply_Settings call
+        # Initialize the state of the duck before applying settings
         self.state = FallingState(self)
         self.state.enter()
 
-        # ** set the timers before using settings **
+        # Set up timers before applying settings
         self.setup_timers()
 
         self.apply_settings()
 
-        # Initialize Microphone_Listener
+        # Initialize MicrophoneListener
         self.microphone_listener = MicrophoneListener(
             device_index=self.selected_mic_index,
             activation_threshold=self.activation_threshold
@@ -1219,8 +1322,6 @@ class Duck(QtWidgets.QWidget):
         self.tray_icon.show()
 
         self.current_volume = 0
-        self.media_player = QtMultimedia.QMediaPlayer()
-        self.media_player.setVolume(50)
 
         self.pet_name = self.settings.value('pet_name', '', type=str)
         if self.pet_name:
@@ -1231,6 +1332,19 @@ class Duck(QtWidgets.QWidget):
             self.seed = None
             self.random_gen = random.Random()
             self.set_default_characteristics()
+
+    def get_scale_factor(self):
+        base_width = 1920
+        base_height = 1080
+        screen = QtWidgets.QApplication.primaryScreen()
+        if screen is None:
+            logging.warning("Could not get primary screen. Defaulting scale factor to 1.0.")
+            return 1.0
+        screen_rect = screen.size()
+        scale_x = screen_rect.width() / base_width
+        scale_y = screen_rect.height() / base_height
+        scale_factor = min(scale_x, scale_y)
+        return scale_factor
 
     def check_playful_state(self):
         if random.random() < self.playful_behavior_probability:
@@ -1246,13 +1360,17 @@ class Duck(QtWidgets.QWidget):
 
     def play_random_sound(self):
         if not self.sound_enabled:
+            self.schedule_next_sound()
             return
         sound_file = self.resources.get_random_sound()
         if sound_file:
             url = QtCore.QUrl.fromLocalFile(sound_file)
-            self.media_player.setMedia(QtMultimedia.QMediaContent(url))
-            self.media_player.play()
+            self.sound_effect.setSource(url)
+            self.sound_effect.play()
             logging.info(f"Played sound: {sound_file}")
+        else:
+            logging.warning("No sound files available to play.")
+        self.schedule_next_sound()
 
     def mouseReleaseEvent(self, event):
         self.state.handle_mouse_release(event)
@@ -1284,7 +1402,7 @@ class Duck(QtWidgets.QWidget):
         return characteristics
 
     def generate_characteristics(self):
-        self.movement_speed = self.random_gen.uniform(1.5, 2)
+        self.movement_speed = self.random_gen.uniform(0.8, 1.5)
         self.base_duck_speed = self.movement_speed
         self.sound_interval_min = 60 + self.random_gen.random() * (300 - 60)
         self.sound_interval_max = 301 + self.random_gen.random() * (900 - 301)
@@ -1292,10 +1410,10 @@ class Duck(QtWidgets.QWidget):
             self.sound_interval_min, self.sound_interval_max = self.sound_interval_max, self.sound_interval_min
         self.sound_response_probability = 0.01 + self.random_gen.random() * (0.25 - 0.01)
         self.playful_behavior_probability = 0.1 + self.random_gen.random() * (0.5 - 0.1)
-        self.sleep_timeout = (5 + self.random_gen.random() * 10) * 60 # 5 to 15 minutes
+        self.sleep_timeout = (5 + self.random_gen.random() * 10) * 60  # 5 to 15 minutes
 
     def set_default_characteristics(self):
-        self.movement_speed = 2
+        self.movement_speed = 1
         self.base_duck_speed = self.movement_speed
         self.sound_interval_min = 120  # Minimum interval in seconds
         self.sound_interval_max = 600  # Maximum interval in seconds
@@ -1374,8 +1492,12 @@ class Duck(QtWidgets.QWidget):
         self.facing_right = self.direction == 1
 
     def change_state(self, new_state, event=None):
-        allowed_wake_states = (DraggingState, PlayfulState, ListeningState, JumpingState)
-        
+        allowed_wake_states = (DraggingState, PlayfulState, ListeningState, JumpingState, WalkingState)
+
+        if isinstance(new_state, ListeningState) and isinstance(self.state, PlayfulState):
+            logging.info("Transition to ListeningState is rejected because the duck is in PlayfulState.")
+            return
+
         if isinstance(self.state, SleepingState):
             if isinstance(new_state, allowed_wake_states):
                 logging.info(f"Transition from SleepingState to {new_state.__class__.__name__}")
@@ -1385,7 +1507,7 @@ class Duck(QtWidgets.QWidget):
                 if event:
                     self.state.handle_mouse_press(event)
             else:
-                # Stay in Sleepingstate
+                # Stay in SleepingState
                 logging.info(f"Remaining in SleepingState, attempt to move to {new_state.__class__.__name__} rejected")
                 return
         else:
@@ -1398,14 +1520,14 @@ class Duck(QtWidgets.QWidget):
             self.state.enter()
             if event:
                 self.state.handle_mouse_press(event)
-        
-        # Detection "shaking" cursor
+
+        # Detection of cursor shaking
         if isinstance(self.state, (IdleState, WalkingState)):
             self.start_cursor_shake_detection()
             logging.info("Starting cursor shake detection.")
         else:
             self.stop_cursor_shake_detection()
-            logging.info("Stop detecting cursor shake.")
+            logging.info("Stopping cursor shake detection.")
 
     def start_cursor_shake_detection(self):
         self.cursor_positions = []
@@ -1449,7 +1571,7 @@ class Duck(QtWidgets.QWidget):
                     self.stop_cursor_shake_detection()
                     self.change_state(PlayfulState(self))
         else:
-            self.cursor_positions = []  # Drop an array if the cursor is far away
+            self.cursor_positions = []  # Reset array if the cursor is far away
 
     def update_animation(self):
         self.state.update_animation()
@@ -1499,32 +1621,34 @@ class Duck(QtWidgets.QWidget):
 
     def on_volume_updated(self, volume):
         self.current_volume = volume
-        # logging.debug(f"Volume update: {volume}%")
-        
+
         if volume > self.activation_threshold:
             self.last_interaction_time = time.time()
             if self.listening_exit_timer:
                 self.listening_exit_timer.stop()
                 self.listening_exit_timer = None
                 logging.debug("ListeningState exit timer stopped.")
-            
+
             if not self.is_listening and not self.listening_entry_timer:
-                self.listening_entry_timer = QtCore.QTimer()
-                self.listening_entry_timer.setSingleShot(True)
-                self.listening_entry_timer.timeout.connect(self.enter_listening_state)
-                self.listening_entry_timer.start(100)  # 100 ms delay to enter a listening state
-                logging.debug("The ListeningState entry timer has been started for 100ms.")
+                if not isinstance(self.state, PlayfulState) and not isinstance(self.state, JumpingState) and not isinstance(self.state, LandingState):
+                    self.listening_entry_timer = QtCore.QTimer()
+                    self.listening_entry_timer.setSingleShot(True)
+                    self.listening_entry_timer.timeout.connect(self.enter_listening_state)
+                    self.listening_entry_timer.start(100)
+                    logging.debug("The ListeningState entry timer has been started for 100ms.")
+                else:
+                    logging.info("The duck is in PlayfulState. No entry into ListeningState.")
         else:
             if self.listening_entry_timer:
                 self.listening_entry_timer.stop()
                 self.listening_entry_timer = None
                 logging.debug("The ListeningState entry timer has stopped.")
-            
+
             if self.is_listening and not self.listening_exit_timer:
                 self.listening_exit_timer = QtCore.QTimer()
                 self.listening_exit_timer.setSingleShot(True)
                 self.listening_exit_timer.timeout.connect(self.exit_listening_state)
-                self.listening_exit_timer.start(1000)  # 1 second (1000 ms) of exit delay from a listening state
+                self.listening_exit_timer.start(1000)  # 1 second (1000 ms) exit delay from a listening state
                 logging.debug("The ListeningState exit timer has been started for 1 second.")
 
     def stop_current_state(self):
@@ -1532,30 +1656,8 @@ class Duck(QtWidgets.QWidget):
             self.state.exit()
             self.state = None
 
-    def on_sound_detected(self):
-        if not self.sound_enabled:
-            self.schedule_next_sound()
-            return
-
-        if random.random() < self.sound_response_probability:
-            # Check if a duck in Fallingstate
-            if isinstance(self.state, FallingState):
-                # Set the flag to enter lineingstate after landing
-                self.listening_entry_scheduled = True
-            else:
-                # Check if a duck on the floor
-                is_on_ground = self.duck_y + self.duck_height >= self.ground_level - 1  # Permissible error
-
-                if is_on_ground:
-                    if not self.is_listening and not self.listening_entry_scheduled:
-                        self.listening_entry_scheduled = True
-                        # Plan a transition to ListeningState through 100ms
-                        QtCore.QTimer.singleShot(100, self.enter_listening_state)
-
-        self.schedule_next_sound()
-
     def enter_listening_state(self):
-        logging.info("Entering to ListeningState.")
+        logging.info("Entering ListeningState.")
         self.listening_entry_timer = None
         if not self.is_listening:
             if isinstance(self.state, (JumpingState, FallingState, DraggingState)):
@@ -1577,17 +1679,6 @@ class Duck(QtWidgets.QWidget):
     def schedule_next_sound(self):
         interval = random.randint(120000, 600000)
         self.sound_timer.start(interval)
-
-    def play_random_sound(self):
-        if not self.sound_enabled:
-            self.schedule_next_sound()
-            return
-        sound_file = self.resources.get_random_sound()
-        if sound_file:
-            url = QtCore.QUrl.fromLocalFile(sound_file)
-            self.media_player.setMedia(QtMultimedia.QMediaContent(url))
-            self.media_player.play()
-        self.schedule_next_sound()
 
     def open_settings(self):
         if hasattr(self, 'settings_window') and self.settings_window.isVisible():
@@ -1623,11 +1714,15 @@ class Duck(QtWidgets.QWidget):
         self.skin_folder = self.settings.value('skin_folder', type=str, defaultValue=None)
         self.selected_skin = self.settings.value('selected_skin', type=str, defaultValue=None)
         self.base_duck_speed = self.settings.value('duck_speed', type=float, defaultValue=2.0)
-        self.duck_speed = self.base_duck_speed * self.pet_size
+        self.duck_speed = self.base_duck_speed * (self.pet_size / 3)
         self.random_behavior = self.settings.value('random_behavior', type=bool, defaultValue=True)
         self.idle_duration = self.settings.value('idle_duration', type=float, defaultValue=5.0)
-        self.sleep_timeout = self.settings.value('sleep_timeout', type=float, defaultValue=300.0)  # Default 5 minutes (enter sleep mode timer)
+        self.sleep_timeout = self.settings.value('sleep_timeout', type=float, defaultValue=300.0)  # Default 5 minutes
         self.direction_change_interval = self.settings.value('direction_change_interval', type=float, defaultValue=20.0)
+        self.current_language = self.settings.value('current_language', type=str, defaultValue='en')
+        # Load translations
+        global translations
+        translations = load_translation(self.current_language)
         if not self.pet_name:
             self.sleep_timeout = self.settings.value('sleep_timeout', type=float, defaultValue=300.0)
         else:
@@ -1648,6 +1743,7 @@ class Duck(QtWidgets.QWidget):
         self.settings.setValue('idle_duration', self.idle_duration)
         self.settings.setValue('sleep_timeout', self.sleep_timeout)
         self.settings.setValue('direction_change_interval', self.direction_change_interval)
+        self.settings.setValue('current_language', self.current_language)
         if not self.pet_name:
             self.settings.setValue('sleep_timeout', self.sleep_timeout)
 
@@ -1662,15 +1758,15 @@ class Duck(QtWidgets.QWidget):
                 self.resources.load_skin(self.selected_skin)
             else:
                 self.resources.load_default_skin()
+            self.resources.set_pet_size(self.pet_size)
 
         # Update the current frame and resize only if necessary
-        if self.current_frame != self.resources.get_animation_frame('idle', 0):
-            self.current_frame = self.resources.get_animation_frame('idle', 0)
-            if self.current_frame:
-                self.duck_width = self.current_frame.width()
-                self.duck_height = self.current_frame.height()
-                self.resize(self.duck_width, self.duck_height)
-                self.update()
+        self.current_frame = self.resources.get_animation_frame('idle', 0)
+        if self.current_frame:
+            self.duck_width = self.current_frame.width()
+            self.duck_height = self.current_frame.height()
+            self.resize(self.duck_width, self.duck_height)
+            self.update()
 
         self.state.enter()
 
@@ -1692,8 +1788,8 @@ class Duck(QtWidgets.QWidget):
         self.pet_size = size_factor
         self.duck_speed = self.base_duck_speed * (self.pet_size / 3)  # The speed of the duck
 
-        self.resources.scale_factor = self.pet_size
-        self.resources.load_sprites()
+        # Update the pet size in ResourceManager
+        self.resources.set_pet_size(self.pet_size)
 
         # Preservation of old sizes and positions
         old_width = self.duck_width
@@ -1724,13 +1820,14 @@ class Duck(QtWidgets.QWidget):
             self.resources.load_skin(self.selected_skin)
         else:
             self.resources.load_default_skin()
+        self.resources.set_pet_size(self.pet_size)
         self.current_frame = self.resources.get_animation_frame('idle', 0)
         if self.current_frame:
             self.duck_width = self.current_frame.width()
             self.duck_height = self.current_frame.height()
             self.resize(self.duck_width, self.duck_height)
             self.update()
-        self.state.enter()  # Reload the current condition
+        self.state.enter()  # Reload the current state
 
     def reset_settings(self):
         self.settings.clear()
@@ -1795,6 +1892,69 @@ class Duck(QtWidgets.QWidget):
         self.microphone_listener.volume_signal.connect(self.on_volume_updated)
         self.microphone_listener.start()
 
+    def check_for_updates(self):
+        try:
+            response = requests.get('https://api.github.com/repos/KristopherZlo/quackduck/releases/latest')
+            if response.status_code == 200:
+                latest_release = response.json()
+                latest_version = latest_release['tag_name'].lstrip('v')  # Assuming tags are like 'v1.6.0'
+                if latest_version > PROJECT_VERSION:
+                    reply = QtWidgets.QMessageBox.question(
+                        self,
+                        translations.get("update_available", "Update Available"),
+                        translations.get("update_question", f"A new version {latest_version} is available. Do you want to update?"),
+                        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                        QtWidgets.QMessageBox.Yes
+                    )
+                    if reply == QtWidgets.QMessageBox.Yes:
+                        self.download_and_install_update(latest_release)
+            else:
+                logging.error(f"Failed to get the latest release information. Status code: {response.status_code}")
+        except Exception as e:
+            logging.error(f"Error checking for updates: {e}")
+
+    def download_and_install_update(self, latest_release):
+        try:
+            assets = latest_release.get('assets', [])
+            for asset in assets:
+                if asset['name'].endswith('.zip'):
+                    download_url = asset['browser_download_url']
+                    break
+            else:
+                logging.error("No suitable file found for update.")
+                return
+
+            # Download the zip file
+            response = requests.get(download_url, stream=True)
+            total_size = int(response.headers.get('content-length', 0))
+            temp_zip_path = os.path.join(tempfile.gettempdir(), 'quackduck_update.zip')
+
+            with open(temp_zip_path, 'wb') as f:
+                for data in response.iter_content(1024):
+                    f.write(data)
+
+            # Unzip the zip file into the application directory
+            with zipfile.ZipFile(temp_zip_path, 'r') as zip_ref:
+                zip_ref.extractall(os.path.dirname(sys.argv[0]))
+
+            # Remove the downloaded zip file
+            os.remove(temp_zip_path)
+
+            QtWidgets.QMessageBox.information(
+                self,
+                translations.get("update_installed", "Update Installed"),
+                translations.get("update_installed_message", "The application has been updated to the latest version. Please restart the application.")
+            )
+            sys.exit(0)
+
+        except Exception as e:
+            logging.error(f"Error during update: {e}")
+            QtWidgets.QMessageBox.critical(
+                self,
+                translations.get("update_error", "Update Error"),
+                translations.get("update_error_message", f"An error occurred during the update: {e}")
+            )
+
 class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
     def __init__(self, parent=None):
         icon_path = resource_path("assets/images/duck_icon.png")
@@ -1832,6 +1992,9 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
         hide_action = menu.addAction(translations.get("hide", "🙈 Hide"))
 
         menu.addSeparator()
+
+        check_updates_action = menu.addAction(translations.get("check_updates", "🔄 Проверить обновления"))
+        check_updates_action.triggered.connect(self.parent.check_for_updates)
         
         coffee_action = menu.addAction(translations.get("buy_me_a_coffee", "☕ Buy me a coffee"))
         coffee_action.triggered.connect(lambda: webbrowser.open("https://buymeacoffee.com/zl0yxp"))
@@ -1849,6 +2012,117 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
         debug_action.triggered.connect(self.parent.show_debug_window)  # Connect to Duck method
 
         self.setContextMenu(menu)
+
+        self.contextMenu().setStyleSheet("""
+            QMenu {
+                background-color: #2a2a2a;
+                color: white;
+                border: 1px solid #444;
+            }
+            QMenu::item:selected {
+                background-color: #3a3a3a;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #444;
+                margin: 5px 0;
+            }
+        """)
+
+    def check_for_updates(self):
+        QtWidgets.QMessageBox.information(
+            self.parent,
+            translations.get("check_updates_title", "Updates"),
+            "The update functionality has not yet been implemented.",
+            QtWidgets.QMessageBox.Ok
+        )
+
+    def show_about(self):
+        about_text = f"QuackDuck\nDeveloped with 💜 by zl0yxp\nDiscord: zl0yxp\nTelegram: t.me/quackduckapp"
+        QtWidgets.QMessageBox.information(
+            self.parent,
+            translations.get("about_title", "About"),
+            about_text,
+            QtWidgets.QMessageBox.Ok
+        )
+
+    def icon_activated(self, reason):
+        if reason == self.Trigger:
+            if self.parent.isVisible():
+                self.parent.hide()
+            else:
+                self.parent.show()
+
+class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
+    def __init__(self, parent=None):
+        icon_path = resource_path("assets/images/duck_icon.png")
+        if not os.path.exists(icon_path):
+            logging.error(f"Icon file {icon_path} not found.")
+            QtWidgets.QMessageBox.critical(parent, translations.get("error_title", "Error!"), translations.get("file_not_found", "File not found:")+ f": '{icon_path}'")
+            super().__init__()  # Initialize without an icon
+        else:
+            icon = QtGui.QIcon(icon_path)
+            super().__init__(icon, parent)
+        
+        self.parent = parent
+        self.setup_menu()
+        self.activated.connect(self.icon_activated)
+
+    def setup_menu(self):
+        menu = QtWidgets.QMenu()
+        
+        # Existing Menu Actions
+        settings_action = menu.addAction(translations.get("settings", "⚙️ Settings"))
+        settings_action.triggered.connect(self.parent.open_settings)
+
+        unstuck_action = menu.addAction(translations.get("unstuck", "🔄 Unstuck"))
+        unstuck_action.triggered.connect(self.parent.unstuck_duck)
+
+        about_action = menu.addAction(translations.get("about", "👋 About"))
+        about_action.triggered.connect(self.show_about)
+
+        check_updates_action = menu.addAction(translations.get("check_updates", "🔄 Update"))
+        check_updates_action.triggered.connect(self.check_for_updates)
+
+        menu.addSeparator()
+        
+        show_action = menu.addAction(translations.get("show", "👀 Show"))
+        hide_action = menu.addAction(translations.get("hide", "🙈 Hide"))
+
+        menu.addSeparator()
+
+        coffee_action = menu.addAction(translations.get("buy_me_a_coffee", "☕ Buy me a coffee"))
+        coffee_action.triggered.connect(lambda: webbrowser.open("https://buymeacoffee.com/zl0yxp"))
+
+        exit_action = menu.addAction(translations.get("exit", "🚪 Close"))
+
+        show_action.triggered.connect(self.parent.show)
+        hide_action.triggered.connect(self.parent.hide)
+        exit_action.triggered.connect(QtWidgets.qApp.quit)
+
+        menu.addSeparator()
+
+        # ** New option Debug Mode **
+        debug_action = menu.addAction(translations.get("debug_mode", "🛠️ Debug mode"))
+        debug_action.triggered.connect(self.parent.show_debug_window)  # Connect to Duck method
+
+        self.setContextMenu(menu)
+
+        self.contextMenu().setStyleSheet("""
+            QMenu {
+                background-color: #2a2a2a;
+                color: white;
+                border: 1px solid #444;
+            }
+            QMenu::item:selected {
+                background-color: #3a3a3a;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #444;
+                margin: 5px 0;
+            }
+        """)
 
     def check_for_updates(self):
         QtWidgets.QMessageBox.information(
@@ -1875,15 +2149,16 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
                 self.parent.show()
 
 class TitleBar(QWidget):
-    def __init__(self, parent):
+    def __init__(self, parent, scale_factor):
         super().__init__()
         self.parent = parent
+        self.scale_factor = scale_factor
         self.init_ui()
         self.start = QPoint(0, 0)
         self.pressing = False
 
     def init_ui(self):
-        self.setFixedHeight(40)
+        self.setFixedHeight(int(40 * self.scale_factor))
         self.setStyleSheet("""
             QWidget {
                 background-color: #1e1e1e;
@@ -1920,6 +2195,7 @@ class TitleBar(QWidget):
         # Window closing button
         self.close_button = QPushButton("✖")
         self.close_button.setToolTip(translations.get("close_tooltip", "Close"))
+        self.close_button.setFixedSize(int(40 * self.scale_factor), int(40 * self.scale_factor))
         self.close_button.clicked.connect(self.parent.close)
 
         layout.addWidget(self.close_button)
@@ -1941,20 +2217,21 @@ class TitleBar(QWidget):
 class SettingsWindow(QDialog):
     def __init__(self, duck):
         super().__init__()
-        self.skin_preview_timers = []
-        self.duck = duck  # Link to the main class Duck
+        self.duck = duck  # Reference to the main Duck class
         self.setWindowTitle(translations.get("settings_title", "Settings"))
         self.resize(900, 700)
-        self.setWindowFlag(Qt.FramelessWindowHint)  # Without a frame for style
+        self.setWindowFlag(Qt.FramelessWindowHint)  # Frameless for styling
         self.setAttribute(Qt.WA_TranslucentBackground, False)
 
         self.accent_qcolor = get_system_accent_color()
         self.accent_color = self.accent_qcolor.name()
 
+        self.scale_factor = self.duck.scale_factor  # Get scale_factor from duck
+
         self.init_ui()
         self.apply_styles()
 
-        # Timer for updating the level of microphone
+        # Timer for updating microphone level
         self.mic_preview_timer = QTimer()
         self.mic_preview_timer.timeout.connect(self.update_mic_preview)
         self.mic_preview_timer.start(10)  # Update every 10 ms
@@ -1963,11 +2240,11 @@ class SettingsWindow(QDialog):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Heading panel
-        self.title_bar = TitleBar(self)
+        # Title bar
+        self.title_bar = TitleBar(self, self.scale_factor)
         main_layout.addWidget(self.title_bar)
 
-        # Basic content
+        # Main content
         content_layout = QHBoxLayout()
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
@@ -1981,7 +2258,12 @@ class SettingsWindow(QDialog):
         left_layout.setSpacing(10)
 
         self.list_widget = QListWidget()
-        self.list_widget.addItems([translations.get("page_button_general", "General"), translations.get("page_button_appearance", "Appearance"), translations.get("page_button_advanced", "Advanced"), translations.get("page_button_about", "About")])
+        self.list_widget.addItems([
+            translations.get("page_button_general", "General"),
+            translations.get("page_button_appearance", "Appearance"),
+            translations.get("page_button_advanced", "Advanced"),
+            translations.get("page_button_about", "About")
+        ])
         self.list_widget.setCurrentRow(0)
         left_layout.addWidget(self.list_widget)
 
@@ -1999,10 +2281,10 @@ class SettingsWindow(QDialog):
         self.stacked_widget.addWidget(self.create_advanced_page())
         self.stacked_widget.addWidget(self.create_about_page())
 
-        # The connection of the choice in the list of pages
+        # Connect list selection with pages
         self.list_widget.currentRowChanged.connect(self.stacked_widget.setCurrentIndex)
 
-        # Adding panels to the main content
+        # Add panels to main content
         content_layout.addWidget(left_panel)
         content_layout.addWidget(self.stacked_widget)
 
@@ -2193,31 +2475,55 @@ class SettingsWindow(QDialog):
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
 
-        # The name of the pet
-        pet_name_label = QLabel(translations.get("pet_name", "Pets name:"))
+        # Initialize dictionary to store widgets
+        self.general_page_widgets = {}
+
+        # Language selection
+        language_label = QLabel(translations.get("language_selection", "Language:"))
+        language_combo = QComboBox()
+        language_options = {
+            'en': 'English',
+            'ru': 'Русский',
+            'de': 'Deutsch',
+            'es': 'Español',
+            'fr': 'Français',
+            'ja': '日本語',
+            'ko': '한국어',
+            'fi': 'Suomi',
+        }
+        for code, name in language_options.items():
+            language_combo.addItem(name, code)
+        current_language_index = language_combo.findData(self.duck.current_language)
+        if current_language_index != -1:
+            language_combo.setCurrentIndex(current_language_index)
+        else:
+            language_combo.setCurrentIndex(0)
+
+        # Pet name
+        pet_name_label = QLabel(translations.get("pet_name", "Pet Name:"))
         name_layout = QHBoxLayout()
         pet_name_edit = QLineEdit()
         pet_name_edit.setPlaceholderText(translations.get("enter_name_placeholder", "Name..."))
         pet_name_edit.setText(self.duck.pet_name)
         name_info_button = QPushButton("ℹ️")
         name_info_button.setFixedSize(30, 30)
-        name_info_button.setToolTip(translations.get("info_about_pet_name_tooltip", "Information about pets name"))
+        name_info_button.setToolTip(translations.get("info_about_pet_name_tooltip", "Information about pet name"))
         name_info_button.clicked.connect(self.show_name_characteristics)
         name_layout.addWidget(pet_name_edit)
         name_layout.addWidget(name_info_button)
 
-        # Choosing a microphone
-        mic_label = QLabel(translations.get("input_device_selection", "Input device:"))
+        # Microphone selection
+        mic_label = QLabel(translations.get("input_device_selection", "Input Device:"))
         mic_combo = QComboBox()
         self.populate_microphones(mic_combo)
         mic_combo.setCurrentIndex(self.get_current_mic_index(mic_combo))
 
         # Activation threshold
-        threshold_label = QLabel(translations.get("activation_threshold", "Activation threshold:"))
+        threshold_label = QLabel(translations.get("activation_threshold", "Activation Threshold:"))
         threshold_layout = QHBoxLayout()
 
         threshold_slider = QSlider(Qt.Horizontal)
-        threshold_slider.setObjectName("activationThresholdSlider")  # Purpose of the name for the slider
+        threshold_slider.setObjectName("activationThresholdSlider")  # Assign name to slider
         threshold_slider.setRange(0, 100)
         threshold_slider.setValue(self.duck.activation_threshold)
 
@@ -2231,14 +2537,14 @@ class SettingsWindow(QDialog):
         threshold_slider_layout.addWidget(threshold_slider)
         threshold_slider_layout.addWidget(threshold_value_label)
 
-        # The level of the microphone
+        # Microphone level
         mic_level_preview = QProgressBar()
         mic_level_preview.setRange(0, 100)
         mic_level_preview.setValue(self.duck.current_volume if hasattr(self.duck, 'current_volume') else 50)
         mic_level_preview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         # Sound settings
-        enable_sound_checkbox = QCheckBox(translations.get("turn_on_sound", "Sound on/off"))
+        enable_sound_checkbox = QCheckBox(translations.get("turn_on_sound", "Enable Sound"))
         enable_sound_checkbox.setChecked(self.duck.sound_enabled)
         autostart_checkbox = QCheckBox(translations.get("run_at_system_startup", "Run at system startup"))
         autostart_checkbox.setChecked(self.duck.autostart_enabled)
@@ -2251,7 +2557,7 @@ class SettingsWindow(QDialog):
         buttons_layout.addWidget(save_button)
         buttons_layout.addWidget(cancel_button)
 
-        # Connection of buttons to action
+        # Connect buttons with actions
         save_button.clicked.connect(lambda: self.save_settings(
             pet_name_edit.text(),
             mic_combo.currentData(),
@@ -2261,21 +2567,23 @@ class SettingsWindow(QDialog):
         ))
         cancel_button.clicked.connect(self.close)
 
-        # Adding widgets to the common Layout
+        # Add widgets to the main layout
         layout.addWidget(pet_name_label)
         layout.addLayout(name_layout)
         layout.addWidget(mic_label)
         layout.addWidget(mic_combo)
         layout.addWidget(threshold_label)
         layout.addLayout(threshold_slider_layout)
-        layout.addWidget(QLabel(translations.get("mic_level", "Sound level:")))
+        layout.addWidget(QLabel(translations.get("mic_level", "Sound Level:")))
         layout.addWidget(mic_level_preview)
         layout.addWidget(enable_sound_checkbox)
         layout.addWidget(autostart_checkbox)
+        layout.addWidget(language_label)
+        layout.addWidget(language_combo)
         layout.addStretch()
         layout.addLayout(buttons_layout)
 
-        # Preservation of links to elements for updating
+        # Save references to elements for updating
         self.general_page_widgets = {
             "pet_name_edit": pet_name_edit,
             "mic_combo": mic_combo,
@@ -2283,7 +2591,8 @@ class SettingsWindow(QDialog):
             "threshold_value_label": threshold_value_label,
             "mic_level_preview": mic_level_preview,
             "enable_sound_checkbox": enable_sound_checkbox,
-            "autostart_checkbox": autostart_checkbox
+            "autostart_checkbox": autostart_checkbox,
+            "language_combo": language_combo
         }
 
         return page
@@ -2294,13 +2603,13 @@ class SettingsWindow(QDialog):
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
 
-        # Floor level
+        # Floor Level
         floor_level_label = QLabel(translations.get("floor_level", "Floor level (pixels from bottom):"))
         floor_level_spin = QSpinBox()
         floor_level_spin.setRange(0, 1000)
         floor_level_spin.setValue(self.duck.ground_level_setting)
 
-        # The size of the pet
+        # Pet Size
         pet_size_label = QLabel(translations.get("pet_size", "Pet size:"))
         pet_size_combo = QComboBox()
         size_options = {1: "x1", 2: "x2", 3: "x3", 5: "x5", 7: "x7", 10: "x10"}
@@ -2310,38 +2619,39 @@ class SettingsWindow(QDialog):
         if current_size_index != -1:
             pet_size_combo.setCurrentIndex(current_size_index)
         else:
-            pet_size_combo.setCurrentIndex(1)  # Average default
+            pet_size_combo.setCurrentIndex(1)  # Default to average value
 
-        # Buttons "choose a skin" and "select a folder with skins" on one line
+        # "Select Skin" and "Select Skins Folder" buttons on the same line
         skin_buttons_layout = QHBoxLayout()
-        skin_selection_button = QPushButton(translations.get("select_skin_button", "Select skin"))
-        skin_folder_button = QPushButton(translations.get("select_skin_folder_button", "Select skin folder"))
+        skin_selection_button = QPushButton(translations.get("select_skin_button", "Select Skin"))
+        skin_folder_button = QPushButton(translations.get("select_skin_folder_button", "Select Skins Folder"))
         skin_buttons_layout.addWidget(skin_selection_button)
         skin_buttons_layout.addWidget(skin_folder_button)
 
         skin_selection_button.clicked.connect(self.open_skin_selection)
         skin_folder_button.clicked.connect(self.select_skins_folder)
 
-        # Prevertent of skins
-        skins_label = QLabel(translations.get("skins_preview", "Skins preview:"))
+        # Skins Preview
+        skins_label = QLabel(translations.get("skins_preview", "Skins Preview:"))
         skins_scroll = QScrollArea()
         skins_scroll.setObjectName('skinsScroll')
         skins_scroll.setWidgetResizable(True)
-        skins_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # Disconnect horizontal scrolling
+        skins_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # Disable horizontal scrolling
 
         skins_container = QWidget()
         skins_container.setStyleSheet("background-color: #121212; border-radius: 10px;")
         skins_grid = QGridLayout(skins_container)
         skins_grid.setSpacing(15)
 
-        # Loading and display of skins from the selected folder
+        # Load and display skins from selected folder
         self.skins_scroll = skins_scroll
         self.skins_container = skins_container
         self.skins_grid = skins_grid
         skins_scroll.setWidget(skins_container)
 
-        # Line with the folder with the skins
-        skins_path_label = QLabel(translations.get("skin_folder_path", "Path to the skins folder:") + f" {self.duck.skin_folder if self.duck.skin_folder else 'Not selected'}")
+        # Skins folder path
+        skins_folder_path = self.duck.skin_folder if self.duck.skin_folder else translations.get("not_selected", "Not selected")
+        skins_path_label = QLabel(translations.get("skin_folder_path", "Skins folder path:") + f" {skins_folder_path}")
         skins_path_label.setStyleSheet("color: gray; font-size: 12px;")
         skins_path_label.setAlignment(Qt.AlignLeft)
         self.skins_path_label = skins_path_label
@@ -2354,14 +2664,14 @@ class SettingsWindow(QDialog):
         buttons_layout.addWidget(save_button)
         buttons_layout.addWidget(cancel_button)
 
-        # Connection of buttons to action
+        # Connect buttons with actions
         save_button.clicked.connect(lambda: self.save_appearance_settings(
             floor_level_spin.value(),
             pet_size_combo.currentData()
         ))
         cancel_button.clicked.connect(self.close)
 
-        # Adding widgets to the common Layout
+        # Add widgets to the main layout
         layout.addWidget(floor_level_label)
         layout.addWidget(floor_level_spin)
         layout.addWidget(pet_size_label)
@@ -2373,10 +2683,10 @@ class SettingsWindow(QDialog):
         layout.addStretch()
         layout.addLayout(buttons_layout)
 
-        # Initialize the list of timers within the method
+        # Initialize list of timers inside method
         self.skin_preview_timers = []
 
-        # Loading of skins if the folder is selected
+        # Load skins if folder is selected
         if self.duck.skin_folder:
             self.load_skins_from_folder(self.duck.skin_folder)
 
@@ -2388,7 +2698,7 @@ class SettingsWindow(QDialog):
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
 
-        # Settlement reset button
+        # Reset settings button
         reset_button = QPushButton(translations.get("reset_to_default_button", "Reset all settings"))
         reset_button.setObjectName('resetButton')
         reset_button.clicked.connect(self.reset_settings)
@@ -2403,7 +2713,7 @@ class SettingsWindow(QDialog):
 
         cancel_button.clicked.connect(self.close)
 
-        # Adding widgets to the common Layout
+        # Add widgets to the main layout
         layout.addWidget(reset_button)
         layout.addStretch()
         layout.addLayout(buttons_layout)
@@ -2416,7 +2726,7 @@ class SettingsWindow(QDialog):
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
 
-        # Information about the application
+        # Application Information
         info_label = QLabel(f"""
             <style>
                 a {{
@@ -2458,11 +2768,11 @@ class SettingsWindow(QDialog):
         buttons_layout.addWidget(save_button)
         buttons_layout.addWidget(cancel_button)
 
-        # Connection of buttons to action
+        # Connect buttons with actions
         save_button.clicked.connect(lambda: self.save_about_settings())
         cancel_button.clicked.connect(self.close)
 
-        # Adding widgets to the common Layout
+        # Add widgets to the main layout
         layout.addWidget(info_label)
         layout.addLayout(support_buttons_layout)
         layout.addStretch()
@@ -2495,10 +2805,10 @@ class SettingsWindow(QDialog):
         if name:
             characteristics = self.duck.get_name_characteristics(name)
             info_text = "\n".join([f"{key}: {value}" for key, value in characteristics.items()])
-            QApplication.instance().beep()  # The sound of the notification has been added
+            QApplication.instance().beep()  # Added notification sound
             QMessageBox.information(self, translations.get("characteristics_title", "Characteristics"), info_text)
         else:
-            QMessageBox.information(self, translations.get("characteristics_title", "Characteristics"), translations.get("characteristics_text", "Enter a name to see the characteristics."))
+            QMessageBox.information(self, translations.get("characteristics_title", "Characteristics"), translations.get("characteristics_text", "Enter a name to see characteristics."))
 
     def save_settings(self, pet_name, mic_index, threshold, sound_enabled, autostart_enabled):
         # Update duck settings
@@ -2508,46 +2818,48 @@ class SettingsWindow(QDialog):
         self.duck.sound_enabled = sound_enabled
         self.duck.autostart_enabled = autostart_enabled
 
-        # Microphone update
+        language_code = self.general_page_widgets["language_combo"].currentData()
+        self.duck.current_language = language_code
+        self.duck.settings.setValue('current_language', language_code)
+
+        # Reload translations
+        global translations
+        translations = load_translation(language_code)
+        self.duck.apply_settings()
+
+        # Update microphone
         self.duck.microphone_listener.update_settings(
             device_index=mic_index,
             activation_threshold=threshold
         )
         self.duck.restart_microphone_listener()
 
-        # Application of settings
+        # Apply settings
         self.duck.apply_settings()
 
-        # Closing the settings window
+        # Close settings window
         self.close()
 
     def save_appearance_settings(self, floor_level, pet_size):
-        # Updating the floor level and the size of the pet
+        # Update floor level and pet size
         self.duck.update_ground_level(floor_level)
         self.duck.update_pet_size(pet_size)
 
-        # Application of settings
+        # Apply settings
         self.duck.apply_settings()
 
-        # Closing the settings window
+        # Close settings window
         self.close()
 
-    def save_advanced_settings(self, direction_change_interval, idle_duration):
-        # Update duck settings
-        self.duck.direction_change_interval = direction_change_interval
-        self.duck.idle_duration = idle_duration
-
-        # Application of settings
-        self.duck.apply_settings()
-
-        # Closing the settings window
+    def save_advanced_settings(self):
+        # Additional settings can be saved here
         self.close()
 
     def save_about_settings(self):
         self.close()
 
     def reset_settings(self):
-        # Confirmation of the reset of settings
+        # Confirm reset settings
         reply = QMessageBox.question(self, translations.get("reset_to_default_title", "Reset settings"),
                                      translations.get("reset_to_default_conformation", "Are you sure you want to reset all settings?"),
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
@@ -2561,88 +2873,93 @@ class SettingsWindow(QDialog):
         try:
             filename, _ = QFileDialog.getOpenFileName(
                 self,
-                translations.get("select_skin_file", "Save"),
+                translations.get("select_skin_file", "Select skin"),
                 "",
                 "Zip Archives (*.zip);;All Files (*)"
             )
             if filename:
                 success = self.duck.resources.load_skin(filename)
                 if success:
-                    self.duck.selected_skin = filename  # Update the selected skin
-                    self.duck.save_settings()  # Save the settings
-                    QMessageBox.information(self, translations.get("success", "Success!"), translations.get("skin_loaded_successfully", "Skin uploaded successfully."))
+                    self.duck.selected_skin = filename  # Update selected skin
+                    self.duck.save_settings()  # Save settings
+                    QMessageBox.information(self, translations.get("success", "Success!"), translations.get("skin_loaded_successfully", "Skin loaded successfully."))
                     self.duck.update_duck_skin()
                 else:
                     QMessageBox.warning(self, translations.get("error_title", "Error!"), translations.get("failed_to_load_skin", "Failed to load skin."))
         except Exception as e:
-            QMessageBox.critical(self, translations.get("error_title", "Error!"), translations.get("error_while_loading_skin", "There was an error loading the skin:")
- +f" {e}")
+            QMessageBox.critical(self, translations.get("error_title", "Error!"), translations.get("error_while_loading_skin", "An error occurred while loading skin:") + f" {e}")
 
     def select_skins_folder(self):
         folder = QFileDialog.getExistingDirectory(
             self,
-            translations.get("select_skin_folder", "Select the folder with skins"),
+            translations.get("select_skin_folder", "Select skins folder"),
             "",
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
         )
         if folder:
-            self.skins_path_label.setText(translations.get("skin_folder_path", "Path to the skins folder:")
-+ f" {folder}")
+            self.skins_path_label.setText(translations.get("skin_folder_path", "Skins folder path:") + f" {folder}")
             self.duck.skin_folder = folder
             self.duck.save_settings()
             self.load_skins_from_folder(folder)
 
     def load_skins_from_folder(self, folder):
+        # Check if the folder exists
+        if not os.path.exists(folder):
+            return
+
         # Stop all timers
-        for timer in self.skin_preview_timers:
+        for timer in getattr(self, 'skin_preview_timers', []):
             if timer.isActive():
                 timer.stop()
-        self.skin_preview_timers.clear()
+        self.skin_preview_timers = []
 
-        # Clear the grid layout
+        # Clear the grid
         while self.skins_grid.count():
             item = self.skins_grid.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        # Cleaning current skins in a grid
-        while self.skins_grid.count():
-            item = self.skins_grid.takeAt(0)
-            if item.widget():
-                widget = item.widget()
-                # Stop timers inside the widget, if they are
-                for child in widget.findChildren(QLabel):
-                    if hasattr(child, 'timer') and child.timer.isActive():
-                        child.timer.stop()
-                widget.deleteLater()
 
         row = 0
         col = 0
-        max_columns = 3  # Maximum 3 skins in a line
+        max_columns = 3  # Maximum 3 skins per row
 
-        has_skins = False  # The flag of the presence of skins
+        has_skins = False  # Flag indicating presence of skins
 
-        for skin_file in os.listdir(folder):
-            skin_path = os.path.join(folder, skin_file)
-            if os.path.isfile(skin_path) and skin_file.endswith('.zip'):
-                idle_frames = self.duck.resources.load_idle_frames_from_skin(skin_path)
-                if idle_frames:
-                    self.display_skin_preview(skin_path, idle_frames, row, col)
-                    has_skins = True
-                    col += 1
-                    if col >= max_columns:
-                        col = 0
-                        row += 1
-                else:
-                    logging.error(f"Skipped {skin_file}: No valid idle frames.")
+        try:
+            for skin_file in os.listdir(folder):
+                skin_path = os.path.join(folder, skin_file)
+                if os.path.isfile(skin_path) and skin_file.endswith('.zip'):
+                    idle_frames = self.duck.resources.load_idle_frames_from_skin(skin_path)
+                    if idle_frames:
+                        self.display_skin_preview(skin_path, idle_frames, row, col)
+                        has_skins = True
+                        col += 1
+                        if col >= max_columns:
+                            col = 0
+                            row += 1
+                    else:
+                        logging.error(f"Skipped {skin_file}: No valid idle frames.")
+        except Exception as e:
+            logging.error(f"Error loading skins from folder '{folder}': {e}")
+            QMessageBox.warning(
+                self,
+                translations.get("error_title", "Error!"),
+                translations.get("error_loading_skins", "An error occurred while loading skins from the folder.")
+            )
+            return
 
         if not has_skins:
-            QMessageBox.warning(self, translations.get("warning_title", "Warning"), translations.get("no_skins_in_folder", "There are no skins in the selected folder."))
+            QMessageBox.warning(
+                self,
+                translations.get("warning_title", "Warning"),
+                translations.get("no_skins_in_folder", "No skins in the selected folder.")
+            )
 
     def display_skin_preview(self, skin_file, idle_frames, row, col):
         animation_label = QLabel()
-        animation_label.setStyleSheet("background-color: transparent;")  # Transparent background for Qlabel
+        animation_label.setStyleSheet("background-color: transparent;")  # Transparent background for QLabel
 
-        # Setting the size of the card
+        # Set card size
         original_size = 64
         scale_factor = 2
         preview_size = int(original_size * scale_factor)
@@ -2670,7 +2987,7 @@ class SettingsWindow(QDialog):
             animation_label.frame_index = (animation_label.frame_index + 1) % frame_count
 
         timer = QTimer()
-        # Store the timer
+        # Save timer
         self.skin_preview_timers.append(timer)
         timer.timeout.connect(update_frame)
         timer.start(150)
@@ -2693,34 +3010,34 @@ class SettingsWindow(QDialog):
         skin_name = os.path.basename(skin_file)
         skin_widget.setToolTip(skin_name)
 
-        # Preservation of the path of the skin
+        # Save skin path
         skin_widget.skin_file = skin_file
 
-        # The use of skin when pressed
+        # Apply skin on click
         skin_widget.mousePressEvent = lambda event, skin_file=skin_file: self.apply_skin(skin_file)
 
         self.skins_grid.addWidget(skin_widget, row, col)
 
     def apply_skin(self, skin_file):
         if not os.path.exists(skin_file):
-            QMessageBox.warning(self, translations.get("error_title", "Error!"), translations.get("file_not_found", "File not found: ")+ f" '{skin_file}'")
+            QMessageBox.warning(self, translations.get("error_title", "Error!"), translations.get("file_not_found", "File not found: ") + f" '{skin_file}'")
             return
 
         success = self.duck.resources.load_skin(skin_file)
         if success:
             self.duck.selected_skin = skin_file
-            self.duck.save_settings()  # Save the settings
+            self.duck.save_settings()  # Save settings
             QMessageBox.information(
                 self,
                 translations.get("success", "Success!"),
-                translations.get("skin_applied_successfully", "Skin applied successfully:") + f" '{os.path.basename(skin_file)}'"
+                translations.get("skin_applied_successfully", "Skin successfully applied:") + f" '{os.path.basename(skin_file)}'"
             )
             self.duck.update_duck_skin()
         else:
             QMessageBox.warning(
                 self,
                 translations.get("error_title", "Error!"),
-                translations.get("failed_apply_skin", "Failed to apply skin:")+ f" '{os.path.basename(skin_file)}'."
+                translations.get("failed_apply_skin", "Failed to apply skin:") + f" '{os.path.basename(skin_file)}'."
             )
 
     def open_link(self, url):
@@ -2735,6 +3052,7 @@ def main():
     app = QtWidgets.QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     sys.excepthook = exception_handler
+
     duck = Duck()
     sys.exit(app.exec_())
 

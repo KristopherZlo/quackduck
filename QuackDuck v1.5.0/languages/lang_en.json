@@ -58,5 +58,7 @@
     "warning_title": "Warning",
     "no_skins_in_folder": "There are no skins in the selected folder.",
     "skin_applied_successfully": "Skin applied successfully:",
-    "failed_apply_skin": "Failed to apply skin:"
+    "failed_apply_skin": "Failed to apply skin:",
+    "folder_not_found": "The specified skins folder does not exist:",
+    "language_selection": "Language:"
 }
