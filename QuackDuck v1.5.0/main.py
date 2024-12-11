@@ -1,5 +1,4 @@
 # TODO
-
 # AUTO UPDATE TEST
 
 import sys
@@ -57,7 +56,6 @@ APP_EXECUTABLE = 'quackduck.exe'  # или другое имя файла на �
 CURRENT_DIR = 'current'   # Директория с текущей установленной версией
 BACKUP_DIR = 'backup'     # Директория для резервной копии
 
-# Убедитесь, что CURRENT_DIR и BACKUP_DIR существуют:
 os.makedirs(CURRENT_DIR, exist_ok=True)
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
@@ -112,9 +110,6 @@ def notify_user_about_update(duck, latest_release, manual_trigger=False):
             QMessageBox.information(duck, "No updates", "You have previously skipped this version. No new updates.")
         return
 
-    # Create a custom message box with three buttons
-    # Text: "Да", "Нет", "Пропустить версию"
-    # We can use QMessageBox with addButton or QDialog for custom buttons.
     msg = QMessageBox(duck)
     msg.setWindowTitle("Обновление доступно")
     msg.setText(f"Доступна новая версия {latest_version}.\n\nЧто нового:\n{release_notes}\n\nУстановить обновление?")
@@ -141,7 +136,6 @@ def download_and_install_update(duck, latest_release):
         QMessageBox.warning(duck, "Ошибка обновления", "Нет доступных файлов для обновления.")
         return
 
-    # Предполагаем, что в релизе один ZIP с обновлением
     asset = assets[0]
     download_url = asset['browser_download_url']
     file_name = asset['name']
@@ -474,7 +468,6 @@ class DebugWindow(QtWidgets.QWidget):
         layout.addWidget(btn_reset)
 
         # Дополнительная информация о всех состояниях
-        # Добавим описание состояний в отдельный блок
         states_info_group = QtWidgets.QGroupBox("States Info")
         states_info_layout = QtWidgets.QVBoxLayout()
 
