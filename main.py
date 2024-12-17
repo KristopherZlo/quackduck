@@ -1,5 +1,9 @@
 # TODO
 # AUTO UPDATE TEST
+# done Translations of a new buttons
+# maybe done Fix settings icon
+
+# IHateThisIdeaCounter = 291
 
 import sys
 import subprocess
@@ -51,17 +55,26 @@ logging.basicConfig(
 PROJECT_VERSION = '1.5.0'
 
 APP_NAME = 'QuackDuck'
-APP_EXECUTABLE = 'quackduck.exe'  # или другое имя файла на соответствующей платформе
+APP_EXECUTABLE = 'quackduck.exe'  # or another file name on the corresponding platform
 
-CURRENT_DIR = 'current'   # Директория с текущей установленной версией
-BACKUP_DIR = 'backup'     # Директория для резервной копии
+CURRENT_DIR = 'current'   # Directory with the currently installed version
+BACKUP_DIR = 'backup'     # Directory for backup
 
 os.makedirs(CURRENT_DIR, exist_ok=True)
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
+def resource_path(relative_path):
+    """Receives an absolute path to a resource file, works both in development mode and after packaging with Pyinstaller."""
+    try:
+        # Pyinstaller creates a temporary folder and keeps the way to _meipass
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
 def load_translation(lang_code):
     try:
-        lang_path = os.path.join('languages', f'lang_{lang_code}.json')
+        lang_path = resource_path(os.path.join('languages', f'lang_{lang_code}.json'))
         with open(lang_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
@@ -69,8 +82,8 @@ def load_translation(lang_code):
         return {}
 
 
-# Languages: de / en / es / fr / ja / ko / ru / fi
-current_language = 'ru'
+# Languages: en / ru
+current_language = 'en'
 translations = load_translation(current_language)
 
 def check_for_updates_github():
@@ -92,50 +105,74 @@ def check_for_updates_github():
 def notify_user_about_update(duck, latest_release, manual_trigger=False):
     """
     Show an update dialog with three buttons: Yes, No, Skip version.
-    If user chooses Skip version, remember this version and do not prompt again.
-    If user chooses No, just close dialog.
-    If user chooses Yes, proceed to update.
-    manual_trigger = True if user manually clicked 'Check for updates'
+    - If the user chooses Skip version, remember this version and do not prompt again automatically.
+    - If the user chooses No, just close the dialog.
+    - If the user chooses Yes, proceed to the update.
+    manual_trigger = True if the user manually clicked 'Check for updates'.
+
+    Modification:
+    - If the version was previously skipped but the check is manual, ignore the skipped state and still show the dialog.
     """
+
     latest_version = latest_release['tag_name'].lstrip('v')
     release_notes = latest_release.get('body', '')
 
-    # If user previously skipped this version, do not prompt.
-    # Compare versions as strings (assuming version tags increase properly).
-    # For more robust comparison, parse versions with packaging.version, but here we assume lexical or semantic versions.
-    if duck.skipped_version == latest_version:
-        # Already skipped this exact version
-        if manual_trigger:
-            # If the user manually checked and this version is skipped, inform them.
-            QMessageBox.information(duck, "No updates", "You have previously skipped this version. No new updates.")
+    # If the version was previously skipped and this is an automatic check, do not prompt again.
+    # If this is a manual check, ignore the skipped state and show the dialog again.
+    if duck.skipped_version == latest_version and not manual_trigger:
+        # Automatically checked updates, version previously skipped: do nothing.
         return
 
     msg = QMessageBox(duck)
-    msg.setWindowTitle("Обновление доступно")
-    msg.setText(f"Доступна новая версия {latest_version}.\n\nЧто нового:\n{release_notes}\n\nУстановить обновление?")
-    yes_button = msg.addButton("Да", QMessageBox.YesRole)
-    no_button = msg.addButton("Нет", QMessageBox.NoRole)
-    skip_button = msg.addButton("Пропустить версию", QMessageBox.ActionRole)
+    msg.setWindowTitle(translations.get("update_available", "Update available"))
+
+    # Use .format() to insert variables into translation strings.
+    message_template = translations.get(
+        "new_version_available_text",
+        f"A new version {latest_version} is available\n\nWhat's new:\n{release_notes}\n\nDo you want to install the new update?"
+    )
+    message = message_template.format(latest_version=latest_version, release_notes=release_notes)
+    msg.setText(message)
+
+    yes_button = msg.addButton(translations.get("yes", "Yes"), QMessageBox.YesRole)
+    no_button = msg.addButton(translations.get("no", "No"), QMessageBox.NoRole)
+    skip_button = msg.addButton(translations.get("skip_this_version", "Skip this version"), QMessageBox.ActionRole)
     msg.setDefaultButton(yes_button)
 
     msg.exec_()
 
     clicked_button = msg.clickedButton()
     if clicked_button == yes_button:
+        # User chose to install the update.
         download_and_install_update(duck, latest_release)
     elif clicked_button == skip_button:
-        # User chose to skip this version
+        # User chose to skip this version.
         duck.set_skipped_version(latest_version)
         if manual_trigger:
-            QMessageBox.information(duck, "Версия пропущена", f"Версия {latest_version} будет пропущена. Мы не будем предлагать её снова.")
-    # If clicked_button == no_button, do nothing
+            # If the user manually checked for updates and decided to skip, inform them.
+            skip_message_template = translations.get(
+                "version_skipped_message",
+                f"Version {latest_version} will be skipped. It will not be offered again."
+            )
+            skip_message = skip_message_template.format(latest_version=latest_version)
+            QMessageBox.information(
+                duck,
+                translations.get("skipped_version_title", "Version Skipped"),
+                skip_message
+            )
+    # If clicked_button == no_button, do nothing.
 
 def download_and_install_update(duck, latest_release):
     assets = latest_release.get('assets', [])
     if not assets:
-        QMessageBox.warning(duck, "Ошибка обновления", "Нет доступных файлов для обновления.")
+        QMessageBox.warning(
+            duck, 
+            translations.get("update_error_title", "Update Error"), 
+            translations.get("no_files_for_update", "No files available for update.")
+        )
         return
 
+    # Assumed that the release contains one ZIP with the update
     asset = assets[0]
     download_url = asset['browser_download_url']
     file_name = asset['name']
@@ -144,43 +181,53 @@ def download_and_install_update(duck, latest_release):
     temp_zip_path = os.path.join(temp_dir, file_name)
 
     try:
-        # Скачиваем ZIP
+        # Download ZIP
         with requests.get(download_url, stream=True) as r:
             r.raise_for_status()
             with open(temp_zip_path, 'wb') as f:
                 shutil.copyfileobj(r.raw, f)
 
-        # Резервное копирование текущей версии перед обновлением
+        # Backupcurrent version before upgrading
         backup_current_version()
 
-        # Распаковываем ZIP
+        # Unpack ZIP
         extract_dir = os.path.join(temp_dir, "extracted")
         os.makedirs(extract_dir, exist_ok=True)
         with zipfile.ZipFile(temp_zip_path, 'r') as zip_ref:
             zip_ref.extractall(extract_dir)
 
-        # Копируем файлы из распакованного архива в CURRENT_DIR
+        # Copy files from the unpacked archive to CURRENT_DIR
         update_success = install_new_version(extract_dir)
         if update_success:
             QMessageBox.information(
                 duck,
-                "Обновление установлено",
-                "Обновление успешно установлено. Приложение будет перезапущено."
+                translations.get("update_success", "Successfully updated"),
+                translations.get("update_success_app_will_be_restarted", "The update has been installed successfully. The application will be restarted.")
             )
             restart_application(duck)
         else:
-            # Если не удалось установить — откатываемся
-            QMessageBox.critical(duck, "Ошибка обновления", "Не удалось установить обновление. Откатываемся на предыдущую версию.")
+            # If failed to install, roll back
+            QMessageBox.critical(
+                duck, 
+                translations.get("update_error_title", "Update Error"), 
+                translations.get("update_failed_rollback", "Failed to install the update. Rolling back to the previous version.")
+            )
             restore_backup_version()
     except Exception as e:
         logging.error(f"Error updating: {e}")
-        QMessageBox.critical(duck, "Ошибка обновления", f"Не удалось обновить: {e}\nОткат к предыдущей версии.")
+        message = translations.get("update_failed_message", f"Failed to update: {e}\nRolling back to the previous version.")
+        message = message.format(e=e)
+        QMessageBox.critical(
+            duck, 
+            translations.get("update_error_title", "Update Error"), 
+            message
+        )
         restore_backup_version()
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 def backup_current_version():
-    # Очищаем backup директорию
+    # Clearing the backup directory
     for f in os.listdir(BACKUP_DIR):
         p = os.path.join(BACKUP_DIR, f)
         if os.path.isfile(p) or os.path.islink(p):
@@ -188,7 +235,7 @@ def backup_current_version():
         elif os.path.isdir(p):
             shutil.rmtree(p)
 
-    # Копируем всё из current в backup
+    # Copy everything from current to backup
     for item in os.listdir(CURRENT_DIR):
         s = os.path.join(CURRENT_DIR, item)
         d = os.path.join(BACKUP_DIR, item)
@@ -198,7 +245,7 @@ def backup_current_version():
             shutil.copy2(s, d)
 
 def restore_backup_version():
-    # Очищаем current
+    # Clear current
     for f in os.listdir(CURRENT_DIR):
         p = os.path.join(CURRENT_DIR, f)
         if os.path.isfile(p) or os.path.islink(p):
@@ -206,7 +253,7 @@ def restore_backup_version():
         elif os.path.isdir(p):
             shutil.rmtree(p)
 
-    # Копируем всё из backup обратно в current
+    # Copy everything from backup back to current
     for item in os.listdir(BACKUP_DIR):
         s = os.path.join(BACKUP_DIR, item)
         d = os.path.join(CURRENT_DIR, item)
@@ -217,7 +264,7 @@ def restore_backup_version():
 
 def install_new_version(extract_dir):
     try:
-        # Очищаем current перед копированием новой версии
+        # Clear current before copying the new version
         for f in os.listdir(CURRENT_DIR):
             p = os.path.join(CURRENT_DIR, f)
             if os.path.isfile(p) or os.path.islink(p):
@@ -225,7 +272,7 @@ def install_new_version(extract_dir):
             elif os.path.isdir(p):
                 shutil.rmtree(p)
 
-        # Копируем файлы из extract_dir в CURRENT_DIR
+        # Copy files from extract_dir to CURRENT_DIR
         for item in os.listdir(extract_dir):
             s = os.path.join(extract_dir, item)
             d = os.path.join(CURRENT_DIR, item)
@@ -239,15 +286,21 @@ def install_new_version(extract_dir):
         return False
 
 def restart_application(duck):
-    # Предполагается, что APP_EXECUTABLE находится в current/
+    # APP_EXECUTABLE is assumed to be in current/
     exe_path = os.path.join(CURRENT_DIR, APP_EXECUTABLE)
     try:
-        subprocess.Popen([exe_path])  # Запускаем новую версию
-        duck.close()  # Закрываем текущее приложение
+        subprocess.Popen([exe_path])  # Launching a new version
+        duck.close()  # Close the current application
     except Exception as e:
         logging.error(f"Error restarting application: {e}")
-        QMessageBox.critical(duck, "Ошибка", f"Не удалось перезапустить приложение: {e}")
-        # В случае ошибки перезапуска можно откатиться, но здесь опционально
+        message = translations.get("restart_failed", f"Failed to restart the application: {e}")
+        message = message.format(e=e)
+        QMessageBox.critical(
+            duck, 
+            translations.get("restart_error_title", "Error"), 
+            message
+        )
+        # In case of a restart error, you can roll back, but this is optional
 
 def get_system_accent_color():
     """
@@ -318,15 +371,6 @@ def get_seed_from_name(name):
     seed = int(hex_dig, 16) % (2**32)
     return seed
 
-def resource_path(relative_path):
-    """Receives an absolute path to a resource file, works both in development mode and after packaging with Pyinstaller."""
-    try:
-        # Pyinstaller creates a temporary folder and keeps the way to _meipass
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
-
 class SettingsManager:
     def __init__(self, organization: str = 'zl0yxp', application: str = 'QuackDuck') -> None:
         self._settings = QtCore.QSettings(organization, application)
@@ -373,7 +417,6 @@ class DebugWindow(QtWidgets.QWidget):
         btn_walk = QtWidgets.QPushButton("Walk")
         btn_walk.clicked.connect(lambda: self.duck.change_state(WalkingState(self.duck)))
 
-        # Новые кнопки для тестирования runState и attackState
         btn_run = QtWidgets.QPushButton("Run")
         btn_run.clicked.connect(lambda: self.duck.change_state(RunState(self.duck)))
 
@@ -462,29 +505,26 @@ class DebugWindow(QtWidgets.QWidget):
         params_group.setLayout(params_layout)
         layout.addWidget(params_group)
 
-        # Section to Reset Parameters
         btn_reset = QtWidgets.QPushButton("Reset Parameters")
         btn_reset.clicked.connect(self.reset_parameters)
         layout.addWidget(btn_reset)
 
-        # Дополнительная информация о всех состояниях
         states_info_group = QtWidgets.QGroupBox("States Info")
         states_info_layout = QtWidgets.QVBoxLayout()
 
         states_info_label = QtWidgets.QLabel()
-        # Краткое описание всех состояний:
         states_info = [
-            "IdleState: Утка стоит на месте, периодически меняя анимации.",
-            "WalkingState: Утка ходит по экрану.",
-            "SleepingState: Утка спит без движения.",
-            "JumpingState: Утка совершает прыжок.",
-            "FallingState: Утка падает вниз.",
-            "DraggingState: Утку перетаскивают мышью.",
-            "ListeningState: Утка слушает микрофонный вход.",
-            "PlayfulState: Утка игрива и бегает за курсором быстрее.",
-            "RunState: Утка быстро бежит (если доступна анимация running).",
-            "AttackState: Утка совершает одноразовую атаку, замирая на месте.",
-            "LandingState: Утка приземляется после падения."
+            "IdleState: The duck stands still, periodically changing animations.",
+            "WalkingState: The duck walks across the screen.",
+            "SleepingState: The duck sleeps without moving.",
+            "JumpingState: The duck makes a jump.",
+            "FallingState: The duck falls down.",
+            "DraggingState: The duck is dragged with the mouse.",
+            "ListeningState: The duck listens to the microphone input.",
+            "PlayfulState: The duck is playful and runs after the cursor faster.",
+            "RunState: The duck runs quickly (if the running animation is available).",
+            "AttackState: The duck makes a one-time attack, freezing in place.",
+            "LandingState: The duck lands after falling."
         ]
         states_info_label.setText("\n".join(states_info))
         states_info_label.setWordWrap(True)
@@ -632,6 +672,63 @@ class HeartWindow(QtWidgets.QWidget):
         self.move(int(self.x), int(self.y))
         self.update()
 
+class NameWindow(QtWidgets.QWidget):
+    """
+    A small top-level window that displays the duck's name above the duck's head.
+    """
+    def __init__(self, duck):
+        super().__init__()
+        self.duck = duck
+        self.setWindowFlags(
+            QtCore.Qt.FramelessWindowHint
+            | QtCore.Qt.WindowStaysOnTopHint
+            | QtCore.Qt.Tool
+        )
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
+
+        self.label = QtWidgets.QLabel(self)
+        self.label.setStyleSheet("QLabel { color: white; font-weight: bold; }")
+        self.label.setAlignment(Qt.AlignCenter)
+        self.update_label()
+        self.show()
+
+    def update_label(self):
+        base_size = getattr(self.duck, 'font_base_size', 14)
+        scaled_size = int(base_size * (self.duck.pet_size / 3))
+        if scaled_size < 8:
+            scaled_size = 8
+        font = QtGui.QFont("Segoe UI", scaled_size)
+        self.label.setFont(font)
+        self.label.setText(self.duck.pet_name)
+        self.label.adjustSize()
+        self.adjustSize()
+
+    def update_position(self):
+        duck_x = self.duck.duck_x
+        duck_y = self.duck.duck_y
+        duck_w = self.duck.duck_width
+        name_width = self.width()
+        name_height = self.height()
+
+        offset_y = self.duck.name_offset_y
+        x = duck_x + (duck_w - name_width) / 2
+        y = duck_y - offset_y
+
+        screen = QtWidgets.QApplication.primaryScreen()
+        screen_rect = screen.geometry()
+
+        if x < 0:
+            x = 0
+        if y < 0:
+            y = 0
+        if x + name_width > screen_rect.width():
+            x = screen_rect.width() - name_width
+        if y + name_height > screen_rect.height():
+            y = screen_rect.height() - name_height
+
+        self.move(int(x), int(y))
+
 class State(ABC):
     def __init__(self, duck: 'Duck') -> None:
         self.duck = duck
@@ -668,18 +765,18 @@ class RunState(State):
     def __init__(self, duck):
         super().__init__(duck)
         self.start_time = None
-        self.duration = random.uniform(60, 120)  # 60-120 секунд
-        self.speed_multiplier = 2  # как в PlayfulState
+        self.duration = random.uniform(60, 120)  # 60-120 sec
+        self.speed_multiplier = 2  # same as in PlayfulState
 
     def enter(self):
         self.start_time = time.time()
-        # Если есть анимация running, используем её, иначе fallback на walk или idle
+        # If there is a running animation, use it, otherwise fallback to walk or idle
         self.frames = self.duck.resources.get_animation_frames_by_name('running') or \
                       self.duck.resources.get_animation_frames_by_name('walk') or \
                       self.duck.resources.get_animation_frames_by_name('idle')
         self.frame_index = 0
 
-        # Увеличиваем скорость, как в PlayfulState
+        # Increase speed like in PlayfulState
         self.prev_speed = self.duck.duck_speed
         self.duck.duck_speed = self.duck.base_duck_speed * self.speed_multiplier * (self.duck.pet_size / 3)
 
@@ -705,7 +802,6 @@ class RunState(State):
         self.duck.move(int(self.duck.duck_x), int(self.duck.duck_y))
 
     def exit(self):
-        # Восстанавливаем скорость
         self.duck.duck_speed = self.prev_speed
 
     def update_frame(self):
@@ -724,64 +820,54 @@ class AttackState(State):
 
     def enter(self):
         """
-        Вход в состояние атаки.
-        Загружаем соответствующие кадры анимации атаки или fallback на idle.
-        Устанавливаем начальный индекс кадра и обновляем отображение.
+        Entering attack state.
+        Load attack animation frames if available, otherwise fall back to idle.
+        Set initial frame index and update.
         """
-        # Если есть анимация 'attack', используем её, иначе fallback на 'idle'
         self.frames = self.duck.resources.get_animation_frames_by_name('attack') or \
                       self.duck.resources.get_animation_frames_by_name('idle')
         self.frame_index = 0
-
         self.update_frame()
-
-        # Во время атаки утка не двигается
+        # During attack, the duck does not move
         self.animation_finished = False
 
     def update_animation(self):
         """
-        Обновление анимации атаки.
-        Прогреваем кадры анимации один раз, затем возвращаемся к предыдущему состоянию или WalkingState.
+        Update attack animation frames once, then return to previous or walking state.
         """
         if self.frames:
             if self.frame_index < len(self.frames) - 1:
                 self.frame_index += 1
                 self.update_frame()
             else:
-                # Закончили проигрывать анимацию
+                # Animation finished
                 if not self.animation_finished:
                     self.animation_finished = True
-                    # Возвращаемся к состоянию, которое было задумано (если есть)
                     if self.return_state:
                         self.duck.change_state(self.return_state)
                     else:
-                        # Если нет return_state, возвращаемся к WalkingState
                         self.duck.change_state(WalkingState(self.duck))
 
     def update_position(self):
         """
-        Во время атаки утка не двигается, поэтому метод остаётся пустым.
+        Duck does not move during attack.
         """
         pass
 
     def exit(self):
         """
-        Выход из состояния атаки.
-        Синхронизируем направление взгляда с текущим направлением движения.
-        Обновляем анимацию текущего состояния, чтобы избежать неправильного отображения.
+        On exiting attack state, synchronize facing direction with current movement direction.
+        Update animation frame of the new state (if walking or idle).
         """
-        # Приводим направление взгляда утки в соответствие с её текущим направлением движения
         self.duck.facing_right = (self.duck.direction == 1)
-
-        # Если текущий state после атаки - WalkingState или IdleState, обновляем их кадр
         if isinstance(self.duck.state, (WalkingState, IdleState)):
             self.duck.state.frame_index = 0
             self.duck.state.update_frame()
 
     def update_frame(self):
         """
-        Обновление текущего кадра анимации утки.
-        Отражаем кадр, если утка смотрит налево.
+        Update the current attack frame.
+        Flip frame if duck is facing left.
         """
         if self.frames:
             frame = self.frames[self.frame_index]
@@ -789,6 +875,25 @@ class AttackState(State):
                 frame = frame.transformed(QtGui.QTransform().scale(-1, 1))
             self.duck.current_frame = frame
             self.duck.update()
+
+    def handle_mouse_press(self, event):
+        """
+        If user presses the left mouse button during attack,
+        cancel attack and go to dragging state.
+        """
+        if event.button() == QtCore.Qt.LeftButton:
+            # Stop attack and enter dragging state
+            self.duck.stop_current_state()
+            self.duck.change_state(DraggingState(self.duck), event)
+
+    def handle_mouse_move(self, event):
+        """
+        If user moves mouse while holding left button during attack,
+        it means user tries to drag. Cancel attack and go to dragging state.
+        """
+        if event.buttons() & QtCore.Qt.LeftButton:
+            self.duck.stop_current_state()
+            self.duck.change_state(DraggingState(self.duck), event)
 
 class LandingState(State):
     def __init__(self, duck, next_state=None):
@@ -895,7 +1000,9 @@ class WalkingState(State):
         # Check if it's time to go to Idlestate
         elapsed_time = time.time() - self.start_time
         if elapsed_time > self.walk_duration:
-            self.duck.change_state(IdleState(self.duck))
+            # Check if current state is still walking and not falling/dragging
+            if not isinstance(self.duck.state, (FallingState, DraggingState)):
+                self.duck.change_state(IdleState(self.duck))
 
     def exit(self):
         if hasattr(self, 'cursor_shake_timer'):
@@ -963,6 +1070,9 @@ class DraggingState(State):
                       self.duck.resources.get_animation_frames_by_name('idle')
         self.frame_index = 0
         self.update_frame()
+        # Hide the name window when starting to drag
+        if self.duck.name_window:
+            self.duck.name_window.hide()
 
     def update_animation(self):
         if self.frames and self.frame_index < len(self.frames) - 1:
@@ -973,7 +1083,9 @@ class DraggingState(State):
         pass
 
     def exit(self):
-        pass
+        # Show the name window again if needed
+        if self.duck.name_window and self.duck.show_name and self.duck.pet_name.strip():
+            self.duck.name_window.show()
 
     def update_frame(self):
         if self.frames:
@@ -992,6 +1104,10 @@ class DraggingState(State):
         self.duck.duck_y = new_pos.y()
         self.duck.move(int(self.duck.duck_x), int(self.duck.duck_y))
 
+        # Update name position immediately
+        if self.duck.name_window and self.duck.show_name and self.duck.pet_name.strip():
+            self.duck.name_window.update_position()
+
     def handle_mouse_release(self, event):
         self.duck.change_state(FallingState(self.duck, play_animation=False, return_state=WalkingState(self.duck)))
 
@@ -1003,38 +1119,40 @@ class JumpingState(State):
         self.is_falling = False  # Flag for tracking fall
 
     def enter(self):
-        self.duck.facing_right = self.duck.direction == 1  # Set the direction of the look
+        self.duck.facing_right = self.duck.direction == 1
         self.jump_frames = self.duck.resources.get_animation_frames_by_name('jump') or \
                            self.duck.resources.get_animation_frames_by_name('idle') or \
                            [self.duck.resources.get_default_frame()]
         self.fall_frames = self.duck.resources.get_animation_frames_by_name('fall') or \
                            self.duck.resources.get_animation_frames_by_name('idle') or \
                            [self.duck.resources.get_default_frame()]
-        self.frames = self.jump_frames  # Start with a jump frame
+        self.frames = self.jump_frames
         self.frame_index = 0
+
+        # CHANGED: If returning to PlayfulState, jump higher (1.5x)
+        if isinstance(self.return_state, PlayfulState):
+            self.vertical_speed = -15 * 1.5  # 1.5 times higher jump
+
         self.update_frame()
 
     def update_animation(self):
         if self.frames and self.frame_index < len(self.frames) - 1:
             self.frame_index += 1
         else:
-            # If you reach the end of the frames and the duck falls, we stay in the last frame
             if self.is_falling:
-                self.frame_index = len(self.frames) - 1  # Stay in the last frame of the fall
+                self.frame_index = len(self.frames) - 1
             else:
-                self.frame_index = 0  # Throw or stop on the last frame of the jump
-
+                self.frame_index = 0
         self.update_frame()
 
     def update_position(self):
         self.vertical_speed += 1
         self.duck.duck_y += self.vertical_speed
 
-        # Check if the duck began to fall
         if not self.is_falling and self.vertical_speed >= 0:
             self.is_falling = True
-            self.frames = self.fall_frames  # Switching to the falling frames
-            self.frame_index = 0  # Drop off the frame for falling
+            self.frames = self.fall_frames
+            self.frame_index = 0
 
         if self.duck.duck_y + self.duck.duck_height >= self.duck.ground_level:
             self.duck.duck_y = self.duck.ground_level - self.duck.duck_height
@@ -1088,7 +1206,7 @@ class SleepingState(State):
         if hasattr(self, 'wake_up_timer') and self.wake_up_timer.isActive():
             self.wake_up_timer.stop()
             self.wake_up_timer = None
-            logging.info("SleepingState: Таймер пробуждения остановлен.")
+            logging.info("SleepingState: Wake up timer stopped.")
 
     def update_frame(self):
         if self.frames:
@@ -1222,8 +1340,8 @@ class PlayfulState(State):
         self.duck.animation_timer.setInterval(100)
         self.duck.direction = self.previous_direction
         self.duck.facing_right = self.previous_facing_right
-        # После выхода из PlayfulState обновим кадр текущего состояния утки,
-        # чтобы не было движения задом наперёд
+        # After exiting PlayfulState, update the frame of the duck's current state,
+        # so that there is no backward movement
         if isinstance(self.duck.state, WalkingState):
             self.duck.state.frame_index = 0
             self.duck.state.update_frame()
@@ -1268,7 +1386,7 @@ class ResourceManager:
             "sleep_transition": ["2:1"]
         }
 
-        # Новые поля для ленивой загрузки
+        # New lazy loading fields
         self.spritesheet_path: Optional[str] = None
         self.frame_width = 32
         self.frame_height = 32
@@ -1289,7 +1407,7 @@ class ResourceManager:
             except Exception as e:
                 logging.error(f"Failed to remove temporary skin directory {self.current_skin_temp_dir}: {e}")
             self.current_skin_temp_dir = None
-        # Очистка анимаций и звуков (кэша)
+        # Clearing animations and sounds (cache)
         self.animations.clear()
         self.sounds.clear()
         self.loaded_spritesheet = None
@@ -1333,7 +1451,7 @@ class ResourceManager:
             self.loaded_spritesheet = spritesheet
 
     def load_sprites_now(self) -> None:
-        # Полная загрузка спрайтов по запросу
+        # Full sprites download on request
         if self.sprites_loaded:
             return
         self.load_spritesheet_if_needed()
@@ -1412,7 +1530,7 @@ class ResourceManager:
                 self.frame_height = frame_height
                 self.animations_config = animations
                 self.current_skin = skin_file
-                # Лениво загружаем, без полного вызова load_sprites_now / load_sounds_now
+                # Lazily load, without full call load_sprites_now / load_sounds_now
 
                 return True
         except Exception as e:
@@ -1422,7 +1540,7 @@ class ResourceManager:
 
     def set_pet_size(self, pet_size: int) -> None:
         self.pet_size = pet_size
-        # Сбросить кэш
+        # Reset cache
         self.loaded_frames_cache.clear()
         self.sprites_loaded = False
         self.animations.clear()
@@ -1434,7 +1552,7 @@ class ResourceManager:
             if self.loaded_spritesheet is None:
                 return QPixmap()
 
-        # Используем кэш кадров
+        # Use frame cache
         key = (row, col)
         if key in self.loaded_frames_cache:
             return self.loaded_frames_cache[key]
@@ -1442,9 +1560,9 @@ class ResourceManager:
         spritesheet = self.loaded_spritesheet
         frame = spritesheet.copy(col * self.frame_width, row * self.frame_height, self.frame_width, self.frame_height)
 
-        # Масштабируем по pet_size напрямую, без KeepAspectRatio:
-        # При pet_size=1 размер кадра будет оригинальным (frame_width x frame_height).
-        # При pet_size=2 будет в 2 раза больше и т.д.
+        # Scale by pet_size directly, without KeepAspectRatio:
+        # With pet_size=1 the frame size will be the original (frame_width x frame_height).
+        # With pet_size=2 it will be 2 times bigger, etc.
         new_width = self.frame_width * self.pet_size
         new_height = self.frame_height * self.pet_size
         frame = frame.scaled(
@@ -1460,7 +1578,6 @@ class ResourceManager:
     def get_animation_frames_by_name(self, animation_name: str) -> List[QPixmap]:
         if animation_name in self.animations:
             return self.animations[animation_name]
-        # Если не загружено, то лениво загружаем
         if not self.sprites_loaded:
             self.load_sprites_now()
         return self.animations.get(animation_name, [])
@@ -1481,7 +1598,7 @@ class ResourceManager:
         return None
 
     def get_idle_animations(self) -> List[str]:
-        # idle анимации будут известны только после загрузки
+        # idle animations will be known only after loading
         if not self.sprites_loaded:
             self.load_sprites_now()
         return [name for name in self.animations.keys() if name.startswith('idle')]
@@ -1501,7 +1618,7 @@ class ResourceManager:
                     with open(config_path, 'r') as f:
                         config = json.load(f)
 
-                    # Проверяем конфиг
+                    # Checking the config
                     if not all(k in config for k in ('spritesheet','frame_width','frame_height','animations')):
                         logging.error(f"Config file is incomplete in {skin_file}.")
                         return None
@@ -1533,7 +1650,7 @@ class ResourceManager:
                                 row = int(row_col[0])
                                 col = int(row_col[1])
                                 frame = spritesheet.copy(col*frame_width, row*frame_height, frame_width, frame_height)
-                                # При предпросмотре можно не масштабировать или масштабировать по желанию
+                                # When previewing, you can choose not to scale or scale as desired
                                 frames.append(frame)
                             except ValueError:
                                 logging.error(f"Incorrect frame format: {frame_str}")
@@ -1628,10 +1745,19 @@ class Duck(QtWidgets.QWidget):
     """
     def __init__(self):
         super().__init__()
-        # Используем SettingsManager
         self.settings_manager = SettingsManager()
-
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.Window)
         self.load_settings()
+
+        icon_path = resource_path("assets/images/white-quackduck-visible.ico")
+        if os.path.exists(icon_path):
+            icon = QtGui.QIcon(icon_path)
+            if icon.isNull():
+                logging.error(f"Failed to load icon from {icon_path}")
+            else:
+                self.setWindowIcon(icon)
+        else:
+            logging.error(f"Icon file not found: {icon_path}")
 
         self.scale_factor = self.get_scale_factor()
         self.pet_size = self.settings_manager.get_value('pet_size', default=3, value_type=int)
@@ -1657,6 +1783,7 @@ class Duck(QtWidgets.QWidget):
         self.random_behavior = self.settings_manager.get_value('random_behavior', default=True, value_type=bool)
         self.idle_duration = self.settings_manager.get_value('idle_duration', default=5.0, value_type=float)
         self.direction_change_interval = self.settings_manager.get_value('direction_change_interval', default=20.0, value_type=float)
+        self.name_offset_y = self.settings_manager.get_value('name_offset_y', default=0, value_type=int)
         self.is_listening = False
         self.listening_entry_timer = None
         self.listening_exit_timer = None
@@ -1667,6 +1794,9 @@ class Duck(QtWidgets.QWidget):
         screen_rect = QtWidgets.QApplication.desktop().screenGeometry()
         self.screen_width = screen_rect.width()
         self.screen_height = screen_rect.height()
+
+        self.show_name = self.settings_manager.get_value('show_name', default=False, value_type=bool)
+        self.name_window = None
 
         self.current_frame = self.resources.get_animation_frame('idle', 0)
         if self.current_frame:
@@ -1719,18 +1849,18 @@ class Duck(QtWidgets.QWidget):
             self.random_gen = random.Random()
             self.set_default_characteristics()
 
-        # Таймер для проверки атаки курсора раз в 5 секунд, независимо от состояния
+        # Timer to check cursor attack every 5 seconds, regardless of state
         self.attack_timer = QtCore.QTimer()
         self.attack_timer.timeout.connect(self.check_attack_trigger)
-        self.attack_timer.start(5000)  # каждые 5 секунд
+        self.attack_timer.start(5000)
 
         self.run_timer = QtCore.QTimer()
         self.run_timer.timeout.connect(self.check_run_state_trigger)
-        self.run_timer.start(5 * 60 * 1000)  # каждые 5 минут
+        self.run_timer.start(5 * 60 * 1000)
 
         latest_release = check_for_updates_github()
         if latest_release:
-            # False означает, что это не ручной вызов, а авто-проверка
+            # False means this is not a manual call but an auto-check
             notify_user_about_update(self, latest_release, manual_trigger=False)
 
     def check_for_updates(self):
@@ -1754,7 +1884,11 @@ class Duck(QtWidgets.QWidget):
         if latest_release:
             notify_user_about_update(self, latest_release, manual_trigger=True)
         else:
-            QMessageBox.information(self, "No updates", "У вас уже установлена последняя версия.")
+            QMessageBox.information(
+                self, 
+                translations.get("no_updates_title", "No Updates"), 
+                translations.get("latest_version_message", "You already have the latest version installed.")
+            )
 
     def set_skipped_version(self, version: str):
         """
@@ -1776,6 +1910,8 @@ class Duck(QtWidgets.QWidget):
         scale_x = screen_rect.width() / base_width
         scale_y = screen_rect.height() / base_height
         scale_factor = min(scale_x, scale_y)
+        if scale_factor < 1.0:
+            scale_factor = 1.0
         logging.info(f"SCALE FACTOR: {scale_factor}")
         return scale_factor
 
@@ -1890,7 +2026,7 @@ class Duck(QtWidgets.QWidget):
 
         self.sleep_timer = QtCore.QTimer()
         self.sleep_timer.timeout.connect(self.check_sleep)
-        self.sleep_timer.start(10000)  # каждые 10 секунд
+        self.sleep_timer.start(10000)
 
         self.direction_change_timer = QtCore.QTimer()
         self.direction_change_timer.timeout.connect(self.change_direction)
@@ -1916,35 +2052,36 @@ class Duck(QtWidgets.QWidget):
         self.schedule_next_random_behavior()
 
     def check_run_state_trigger(self):
-        # Если есть анимация running, то раз в 5 мин с шансом от 1% до 5% входим в RunState
+        # If there is a running animation, then once every 5 minutes with a chance of 1% to 5% we enter RunState
         running_frames = self.resources.get_animation_frames_by_name('running')
         if running_frames:
-            # Генерируем шанс на вход
-            chance = self.random_gen.uniform(0.01, 0.05)  # от 1% до 5%
+            chance = self.random_gen.uniform(0.01, 0.05)
             if random.random() < chance:
-                # Проверим, что текущее состояние позволяет перейти в RunState
                 if not isinstance(self.state, (FallingState, DraggingState, ListeningState, JumpingState, PlayfulState, RunState, AttackState)):
                     self.change_state(RunState(self))
 
     def can_attack(self):
-        # Если в конфиге есть анимация attack
+        # Attack is only allowed if current state is either WalkingState or IdleState
+        if not isinstance(self.state, (WalkingState, IdleState)):
+            return False
+        
+        # If there is an attack animation in the config
         attack_frames = self.resources.get_animation_frames_by_name('attack')
         if attack_frames:
             cursor_pos = QtGui.QCursor.pos()
             duck_pos = self.pos()
             duck_center = duck_pos + self.rect().center()
 
-            # Базовая дистанция для атаки, масштабируем относительно pet_size
+            # Base attack range, scaled relative to pet_size
             base_attack_distance = 50
             attack_distance = base_attack_distance * (self.pet_size / 3)
 
             dist = ((cursor_pos.x() - duck_center.x())**2 + (cursor_pos.y() - duck_center.y())**2)**0.5
 
             if dist < attack_distance:
-                # Шанс от 1% до 20%
-                chance = self.random_gen.uniform(1, 1)
+                chance = self.random_gen.uniform(0.01, 0.2)
                 if random.random() < chance:
-                    # Определяем сторону атаки
+                    # Determine the attack side
                     if cursor_pos.x() < duck_center.x():
                         self.facing_right = False
                     else:
@@ -1953,14 +2090,13 @@ class Duck(QtWidgets.QWidget):
         return False
 
     def check_attack_trigger(self):
-        # Проверяем атаку раз в 5 секунд
-        # Не атакуем, если утка в FallingState, JumpingState или AttackState
+        # Don't attack if the duck is in FallingState, JumpingState or AttackState
         if not isinstance(self.state, (FallingState, JumpingState, AttackState)):
             if self.can_attack():
                 self.change_state(AttackState(self))
 
     def enter_random_idle_state(self):
-        if not isinstance(self.state, IdleState):
+        if not isinstance(self.state, IdleState) and not isinstance(self.state, (FallingState, DraggingState)):
             self.change_state(IdleState(self))
 
     def change_direction(self):
@@ -1970,7 +2106,7 @@ class Duck(QtWidgets.QWidget):
     def change_state(self, new_state, event=None):
         allowed_wake_states = (DraggingState, PlayfulState, ListeningState, JumpingState, WalkingState)
 
-        # Запрещаем переход в RunState или AttackState, если утка в воздухе
+        # Prevent transition to RunState or AttackState if the duck is in the air
         if isinstance(new_state, (RunState, AttackState)) and isinstance(self.state, (FallingState, JumpingState)):
             logging.info(f"Cannot transition to {new_state.__class__.__name__} while in mid-air.")
             return
@@ -2008,7 +2144,7 @@ class Duck(QtWidgets.QWidget):
             self.stop_cursor_shake_detection()
             logging.info("Stopping cursor shake detection.")
 
-        # Определяем, включать ли отслеживание тряски курсора
+        # Determine whether to enable cursor shake tracking
         if isinstance(self.state, (IdleState, WalkingState)):
             self.start_cursor_shake_detection()
             logging.info("Starting cursor shake detection.")
@@ -2025,7 +2161,7 @@ class Duck(QtWidgets.QWidget):
         self.cursor_positions = []
 
     def check_cursor_shake(self):
-        # Проверяем тряску курсора. Атака отсюда убрана, теперь она по таймеру check_attack_trigger()
+        # Checking the cursor shaking. The attack has been removed from here, now it is on the timer check_attack_trigger()
         cursor_pos = QtGui.QCursor.pos()
         duck_pos = self.pos()
         duck_rect = self.rect()
@@ -2052,7 +2188,7 @@ class Duck(QtWidgets.QWidget):
                         direction_changes += 1
                 if direction_changes >= 4:
                     self.stop_cursor_shake_detection()
-                    # Входим просто в PlayfulState, без атаки (атака по таймеру отдельно)
+                    # We just enter PlayfulState, without attack (attack by timer separately)
                     self.change_state(PlayfulState(self))
         else:
             self.cursor_positions = []
@@ -2062,6 +2198,8 @@ class Duck(QtWidgets.QWidget):
 
     def update_position(self):
         self.state.update_position()
+        if self.name_window and self.show_name and self.pet_name.strip():
+            self.name_window.update_position()
 
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
@@ -2169,7 +2307,7 @@ class Duck(QtWidgets.QWidget):
             self.settings_manager_window.raise_()
             self.settings_manager_window.activateWindow()
         else:
-            self.settings_manager_window = SettingsWindow(self)  # Transfer the link to Duck
+            self.settings_manager_window = SettingsWindow(self, self.scale_factor)
             self.settings_manager_window.show()
 
     def unstuck_duck(self):
@@ -2185,7 +2323,6 @@ class Duck(QtWidgets.QWidget):
         event.accept()
 
     def load_settings(self) -> None:
-        # Все значения уже читаем через settings_manager
         self.pet_name = self.settings_manager.get_value('pet_name', default="", value_type=str)
         self.selected_mic_index = self.settings_manager.get_value('selected_mic_index', default=None, value_type=int)
         self.activation_threshold = self.settings_manager.get_value('activation_threshold', default=1, value_type=int)
@@ -2206,14 +2343,20 @@ class Duck(QtWidgets.QWidget):
         self.direction_change_interval = self.settings_manager.get_value('direction_change_interval', default=20.0, value_type=float)
         self.current_language = self.settings_manager.get_value('current_language', default='en', value_type=str)
         self.skipped_version = self.settings_manager.get_value('skipped_version', default="", value_type=str)
+        self.show_name = self.settings_manager.get_value('show_name', default=False, value_type=bool)
 
-        # Перезагрузка переводов
         global translations
         translations = load_translation(self.current_language)
-        if not self.pet_name:
-            self.sleep_timeout = self.settings_manager.get_value('sleep_timeout', default=300.0, value_type=float)
-        else:
+
+        # Important: First, let's set up random_gen depending on pet_name
+        if self.pet_name.strip():
+            self.seed = get_seed_from_name(self.pet_name)
+            self.random_gen = random.Random(self.seed)
             self.generate_characteristics()
+        else:
+            self.seed = None
+            self.random_gen = random.Random()
+            self.set_default_characteristics()
 
     def save_settings(self) -> None:
         self.settings_manager.set_value('pet_name', self.pet_name)
@@ -2231,6 +2374,8 @@ class Duck(QtWidgets.QWidget):
         self.settings_manager.set_value('sleep_timeout', self.sleep_timeout)
         self.settings_manager.set_value('direction_change_interval', self.direction_change_interval)
         self.settings_manager.set_value('current_language', self.current_language)
+        self.settings_manager.set_value('show_name', self.show_name)
+
         if not self.pet_name:
             self.settings_manager.set_value('sleep_timeout', self.sleep_timeout)
         self.settings_manager.sync()
@@ -2240,7 +2385,6 @@ class Duck(QtWidgets.QWidget):
         self.update_pet_size(self.pet_size)
         self.update_ground_level(self.ground_level_setting)
 
-        # Only reload the skin if it has changed
         if self.selected_skin != self.resources.current_skin:
             if self.selected_skin:
                 self.resources.load_skin(self.selected_skin)
@@ -2248,7 +2392,6 @@ class Duck(QtWidgets.QWidget):
                 self.resources.load_default_skin()
             self.resources.set_pet_size(self.pet_size)
 
-        # Update the current frame and resize only if necessary
         self.current_frame = self.resources.get_animation_frame('idle', 0)
         if self.current_frame:
             self.duck_width = self.current_frame.width()
@@ -2256,21 +2399,42 @@ class Duck(QtWidgets.QWidget):
             self.resize(self.duck_width, self.duck_height)
             self.update()
 
-        self.state.enter()
-
         if self.autostart_enabled:
             self.enable_autostart()
         else:
             self.disable_autostart()
 
-        self.save_settings()
+        self.update_name_offset(getattr(self, 'name_offset_y', 0))
+        self.update_font_base_size(getattr(self, 'font_base_size', 14))
 
-        # Update other settings as needed
+        self.save_settings()
         self.duck_speed = self.base_duck_speed * (self.pet_size / 3)
         self.animation_timer.setInterval(100)
 
         self.direction_change_timer.stop()
         self.direction_change_timer.start(self.direction_change_interval * 1000)
+
+        if self.show_name and self.pet_name.strip():
+            if not self.name_window:
+                self.name_window = NameWindow(self)
+            else:
+                self.name_window.update_label()
+                self.name_window.show()
+        else:
+            if self.name_window:
+                self.name_window.hide()
+
+    def update_name_offset(self, offset):
+        self.name_offset_y = offset
+        self.settings_manager.set_value('name_offset_y', offset)
+        if self.name_window and self.show_name and self.pet_name.strip():
+            self.name_window.update_position()
+
+    def update_font_base_size(self, base_size):
+        self.font_base_size = base_size
+        self.settings_manager.set_value('font_base_size', base_size)
+        if self.name_window and self.show_name and self.pet_name.strip():
+            self.name_window.update_label()
 
     def update_pet_size(self, size_factor):
         self.pet_size = size_factor
@@ -2302,6 +2466,9 @@ class Duck(QtWidgets.QWidget):
 
         self.resize(self.duck_width, self.duck_height)
         self.move(int(self.duck_x), int(self.duck_y))
+
+        if self.name_window:
+            self.name_window.update_label()
 
     def update_duck_skin(self):
         if self.selected_skin:
@@ -2356,6 +2523,9 @@ class Duck(QtWidgets.QWidget):
             self.random_gen = random.Random()
             self.set_default_characteristics()
 
+        if self.name_window:
+            self.name_window.update_label()
+
     def get_input_devices(self):
         input_devices = []
         try:
@@ -2382,18 +2552,41 @@ class Duck(QtWidgets.QWidget):
 
 class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
     def __init__(self, parent=None):
-        icon_path = resource_path("assets/images/duck_icon.png")
-        if not os.path.exists(icon_path):
-            logging.error(f"Icon file {icon_path} not found.")
-            QtWidgets.QMessageBox.critical(parent, translations.get("error_title", "Error!"), translations.get("file_not_found", "File not found:")+ f": '{icon_path}'")
+        self.visible_icon_path = resource_path("assets/images/white-quackduck-visible.ico")
+        self.hidden_icon_path = resource_path("assets/images/white-quackduck-hidden.ico")
+
+        if not os.path.exists(self.visible_icon_path):
+            logging.error(f"Icon file {self.visible_icon_path} not found.")
+            QtWidgets.QMessageBox.critical(
+                parent, 
+                translations.get("error_title", "Error!"), 
+                translations.get("file_not_found", "File not found:") + f": '{self.visible_icon_path}'"
+            )
             super().__init__()  # Initialize without an icon
         else:
-            icon = QtGui.QIcon(icon_path)
+            icon = QtGui.QIcon(self.visible_icon_path)
             super().__init__(icon, parent)
-        
+
         self.parent = parent
         self.setup_menu()
         self.activated.connect(self.icon_activated)
+
+    def icon_activated(self, reason):
+        if reason == self.Trigger:
+            if self.parent.isVisible():
+                # The duck is visible - we hide it
+                self.parent.hide()
+                # Change the icon to "hidden"
+                if os.path.exists(self.hidden_icon_path):
+                    self.setIcon(QtGui.QIcon(self.hidden_icon_path))
+            else:
+                # Duck is hidden - we show
+                self.parent.show()
+                self.parent.raise_()
+                self.parent.activateWindow()
+                # Change the icon to "visible"
+                if os.path.exists(self.visible_icon_path):
+                    self.setIcon(QtGui.QIcon(self.visible_icon_path))
 
     def setup_menu(self):
         menu = QtWidgets.QMenu()
@@ -2423,13 +2616,12 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
 
         exit_action = menu.addAction(translations.get("exit", "🚪 Close"))
 
-        show_action.triggered.connect(self.parent.show)
-        hide_action.triggered.connect(self.parent.hide)
+        show_action.triggered.connect(self.show_duck)
+        hide_action.triggered.connect(self.hide_duck)
         exit_action.triggered.connect(QtWidgets.qApp.quit)
 
         menu.addSeparator()
 
-        # ** New option Debug Mode **
         debug_action = menu.addAction(translations.get("debug_mode", "🛠️ Debug mode"))
         debug_action.triggered.connect(self.parent.show_debug_window)  # Connect to Duck method
 
@@ -2451,6 +2643,20 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
             }
         """)
 
+    def hide_duck(self):
+        self.parent.hide
+
+        if os.path.exists(self.hidden_icon_path):
+            self.setIcon(QtGui.QIcon(self.hidden_icon_path))
+
+    def show_duck(self):
+        self.parent.show
+        self.parent.raise_()
+        self.parent.activateWindow()
+
+        if os.path.exists(self.visible_icon_path):
+            self.setIcon(QtGui.QIcon(self.visible_icon_path))
+
     def check_for_updates(self):
         """
         Called when user clicks 'Check for updates' in the tray menu.
@@ -2467,108 +2673,108 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
             QtWidgets.QMessageBox.Ok
         )
 
-    def icon_activated(self, reason):
-        if reason == self.Trigger:
-            if self.parent.isVisible():
-                self.parent.hide()
-            else:
-                self.parent.show()
+# class TitleBar(QWidget):
+#     def __init__(self, parent, scale_factor):
+#         super().__init__()
+#         self.parent = parent
+#         self.scale_factor = scale_factor
+#         self.init_ui()
+#         self.start = QPoint(0, 0)
+#         self.pressing = False
 
-class TitleBar(QWidget):
-    def __init__(self, parent, scale_factor):
-        super().__init__()
-        self.parent = parent
-        self.scale_factor = scale_factor
-        self.init_ui()
-        self.start = QPoint(0, 0)
-        self.pressing = False
+#     def init_ui(self):
+#         self.setFixedHeight(int(40 * self.scale_factor))
+#         self.setStyleSheet("""
+#             QWidget {
+#                 background-color: #1e1e1e;
+#             }
+#             QLabel {
+#                 color: white;
+#                 font-size: 16px;
+#             }
+#             QPushButton {
+#                 background-color: transparent;
+#                 border: none;
+#                 color: white;
+#                 font-size: 16px;
+#                 width: 40px;
+#                 height: 40px;
+#             }
+#             QPushButton:hover {
+#                 background-color: #3a3a3a;
+#                 border-radius: 5px;
+#             }
+#         """)
 
-    def init_ui(self):
-        self.setFixedHeight(int(40 * self.scale_factor))
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #1e1e1e;
-            }
-            QLabel {
-                color: white;
-                font-size: 16px;
-            }
-            QPushButton {
-                background-color: transparent;
-                border: none;
-                color: white;
-                font-size: 16px;
-                width: 40px;
-                height: 40px;
-            }
-            QPushButton:hover {
-                background-color: #3a3a3a;
-                border-radius: 5px;
-            }
-        """)
+#         layout = QHBoxLayout(self)
+#         layout.setContentsMargins(10, 0, 10, 0)
+#         layout.setSpacing(0)
 
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 0, 10, 0)
-        layout.setSpacing(0)
+#         self.title = QLabel(translations.get("settings_title", "Settings"))
+#         self.title.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+#         self.title.setStyleSheet("background-color: transparent;")
 
-        self.title = QLabel(translations.get("settings_title", "Settings"))
-        self.title.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-        self.title.setStyleSheet("background-color: transparent;")
+#         layout.addWidget(self.title)
+#         layout.addStretch()
 
-        layout.addWidget(self.title)
-        layout.addStretch()
+#         # Window closing button
+#         self.close_button = QPushButton("✖")
+#         self.close_button.setToolTip(translations.get("close_tooltip", "Close"))
+#         self.close_button.setFixedSize(int(40 * self.scale_factor), int(40 * self.scale_factor))
+#         self.close_button.clicked.connect(self.parent.close)
 
-        # Window closing button
-        self.close_button = QPushButton("✖")
-        self.close_button.setToolTip(translations.get("close_tooltip", "Close"))
-        self.close_button.setFixedSize(int(40 * self.scale_factor), int(40 * self.scale_factor))
-        self.close_button.clicked.connect(self.parent.close)
+#         layout.addWidget(self.close_button)
 
-        layout.addWidget(self.close_button)
+#     def mousePressEvent(self, event):
+#         if event.button() == Qt.LeftButton:
+#             self.start = event.globalPos()
+#             self.pressing = True
 
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.start = event.globalPos()
-            self.pressing = True
+#     def mouseMoveEvent(self, event):
+#         if self.pressing:
+#             delta = event.globalPos() - self.start
+#             self.parent.move(self.parent.pos() + delta)
+#             self.start = event.globalPos()
 
-    def mouseMoveEvent(self, event):
-        if self.pressing:
-            delta = event.globalPos() - self.start
-            self.parent.move(self.parent.pos() + delta)
-            self.start = event.globalPos()
-
-    def mouseReleaseEvent(self, event):
-        self.pressing = False
+#     def mouseReleaseEvent(self, event):
+#         self.pressing = False
 
 class SettingsWindow(QDialog):
-    def __init__(self, duck):
+    def __init__(self, duck, scale_factor):
         super().__init__()
-        self.duck = duck  # Reference to the main Duck class
+        icon_path = resource_path("assets/images/settings.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QtGui.QIcon(icon_path))
+        else:
+            logging.error(f"Icon file not found: {icon_path}")
+
+        self.duck = duck
+        self.scale_factor = scale_factor
         self.setWindowTitle(translations.get("settings_title", "Settings"))
-        self.resize(900, 700)
-        self.setWindowFlag(Qt.FramelessWindowHint)  # Frameless for styling
-        self.setAttribute(Qt.WA_TranslucentBackground, False)
+        window_scaled_width = 900 * self.scale_factor
+        window_scaled_height = 700 * self.scale_factor
+        self.resize(int(window_scaled_width), int(window_scaled_height))
+        # self.setWindowFlag(Qt.FramelessWindowHint)
+        # self.setAttribute(Qt.WA_TranslucentBackground, False)
 
         self.accent_qcolor = get_system_accent_color()
         self.accent_color = self.accent_qcolor.name()
 
-        self.scale_factor = self.duck.scale_factor  # Get scale_factor from duck
+        self.scale_factor = self.duck.scale_factor
+
+        self.mic_preview_timer = QTimer()
+        self.mic_preview_timer.timeout.connect(self.update_mic_preview)
+        self.mic_preview_timer.start(10)
 
         self.init_ui()
         self.apply_styles()
-
-        # Timer for updating microphone level
-        self.mic_preview_timer = QTimer()
-        self.mic_preview_timer.timeout.connect(self.update_mic_preview)
-        self.mic_preview_timer.start(10)  # Update every 10 ms
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Title bar
-        self.title_bar = TitleBar(self, self.scale_factor)
-        main_layout.addWidget(self.title_bar)
+        # custom title bar
+        # main_layout.addWidget(self.title_bar)
 
         # Main content
         content_layout = QHBoxLayout()
@@ -2600,17 +2806,14 @@ class SettingsWindow(QDialog):
         version_label.setStyleSheet("color: gray; font-size: 12px;")
         left_layout.addWidget(version_label)
 
-        # Stack pages
         self.stacked_widget = QStackedWidget()
         self.stacked_widget.addWidget(self.create_general_page())
         self.stacked_widget.addWidget(self.create_appearance_page())
         self.stacked_widget.addWidget(self.create_advanced_page())
         self.stacked_widget.addWidget(self.create_about_page())
 
-        # Connect list selection with pages
         self.list_widget.currentRowChanged.connect(self.stacked_widget.setCurrentIndex)
 
-        # Add panels to main content
         content_layout.addWidget(left_panel)
         content_layout.addWidget(self.stacked_widget)
 
@@ -2618,7 +2821,6 @@ class SettingsWindow(QDialog):
 
     def apply_styles(self):
         accent_color = self.accent_qcolor
-
         self.setStyleSheet(f"""
             QDialog {{
                 background-color: #121212;
@@ -2801,30 +3003,6 @@ class SettingsWindow(QDialog):
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
 
-        # Initialize dictionary to store widgets
-        self.general_page_widgets = {}
-
-        # Language selection
-        language_label = QLabel(translations.get("language_selection", "Language:"))
-        language_combo = QComboBox()
-        language_options = {
-            'en': 'English',
-            'ru': 'Русский',
-            'de': 'Deutsch',
-            'es': 'Español',
-            'fr': 'Français',
-            'ja': '日本語',
-            'ko': '한국어',
-            'fi': 'Suomi',
-        }
-        for code, name in language_options.items():
-            language_combo.addItem(name, code)
-        current_language_index = language_combo.findData(self.duck.current_language)
-        if current_language_index != -1:
-            language_combo.setCurrentIndex(current_language_index)
-        else:
-            language_combo.setCurrentIndex(0)
-
         # Pet name
         pet_name_label = QLabel(translations.get("pet_name", "Pet Name:"))
         name_layout = QHBoxLayout()
@@ -2838,7 +3016,7 @@ class SettingsWindow(QDialog):
         name_layout.addWidget(pet_name_edit)
         name_layout.addWidget(name_info_button)
 
-        # Microphone selection
+        # Input device
         mic_label = QLabel(translations.get("input_device_selection", "Input Device:"))
         mic_combo = QComboBox()
         self.populate_microphones(mic_combo)
@@ -2846,19 +3024,14 @@ class SettingsWindow(QDialog):
 
         # Activation threshold
         threshold_label = QLabel(translations.get("activation_threshold", "Activation Threshold:"))
-        threshold_layout = QHBoxLayout()
-
         threshold_slider = QSlider(Qt.Horizontal)
-        threshold_slider.setObjectName("activationThresholdSlider")  # Assign name to slider
+        threshold_slider.setObjectName("activationThresholdSlider")
         threshold_slider.setRange(0, 100)
         threshold_slider.setValue(self.duck.activation_threshold)
-
         threshold_value_label = QLabel(str(self.duck.activation_threshold))
         threshold_value_label.setFixedWidth(40)
         threshold_value_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-
         threshold_slider.valueChanged.connect(lambda value: threshold_value_label.setText(str(value)))
-
         threshold_slider_layout = QHBoxLayout()
         threshold_slider_layout.addWidget(threshold_slider)
         threshold_slider_layout.addWidget(threshold_value_label)
@@ -2869,13 +3042,14 @@ class SettingsWindow(QDialog):
         mic_level_preview.setValue(self.duck.current_volume if hasattr(self.duck, 'current_volume') else 50)
         mic_level_preview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        # Sound settings
+        # Turn on sound
         enable_sound_checkbox = QCheckBox(translations.get("turn_on_sound", "Enable Sound"))
         enable_sound_checkbox.setChecked(self.duck.sound_enabled)
-        autostart_checkbox = QCheckBox(translations.get("run_at_system_startup", "Run at system startup"))
-        autostart_checkbox.setChecked(self.duck.autostart_enabled)
 
-        # Buttons
+        # Show duck's name
+        show_name_checkbox = QCheckBox(translations.get("show_name_checkbox", "Show name above duck"))
+        show_name_checkbox.setChecked(self.duck.show_name)
+
         buttons_layout = QHBoxLayout()
         save_button = QPushButton(translations.get("save_button", "Save"))
         cancel_button = QPushButton(translations.get("cancel_button", "Cancel"))
@@ -2883,17 +3057,15 @@ class SettingsWindow(QDialog):
         buttons_layout.addWidget(save_button)
         buttons_layout.addWidget(cancel_button)
 
-        # Connect buttons with actions
-        save_button.clicked.connect(lambda: self.save_settings(
+        save_button.clicked.connect(lambda: self.save_general_settings(
             pet_name_edit.text(),
             mic_combo.currentData(),
             threshold_slider.value(),
             enable_sound_checkbox.isChecked(),
-            autostart_checkbox.isChecked()
+            show_name_checkbox.isChecked()
         ))
         cancel_button.clicked.connect(self.close)
 
-        # Add widgets to the main layout
         layout.addWidget(pet_name_label)
         layout.addLayout(name_layout)
         layout.addWidget(mic_label)
@@ -2903,13 +3075,10 @@ class SettingsWindow(QDialog):
         layout.addWidget(QLabel(translations.get("mic_level", "Sound Level:")))
         layout.addWidget(mic_level_preview)
         layout.addWidget(enable_sound_checkbox)
-        layout.addWidget(autostart_checkbox)
-        layout.addWidget(language_label)
-        layout.addWidget(language_combo)
+        layout.addWidget(show_name_checkbox)
         layout.addStretch()
         layout.addLayout(buttons_layout)
 
-        # Save references to elements for updating
         self.general_page_widgets = {
             "pet_name_edit": pet_name_edit,
             "mic_combo": mic_combo,
@@ -2917,8 +3086,7 @@ class SettingsWindow(QDialog):
             "threshold_value_label": threshold_value_label,
             "mic_level_preview": mic_level_preview,
             "enable_sound_checkbox": enable_sound_checkbox,
-            "autostart_checkbox": autostart_checkbox,
-            "language_combo": language_combo
+            "show_name_checkbox": show_name_checkbox
         }
 
         return page
@@ -2929,13 +3097,7 @@ class SettingsWindow(QDialog):
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
 
-        # Floor Level
-        floor_level_label = QLabel(translations.get("floor_level", "Floor level (pixels from bottom):"))
-        floor_level_spin = QSpinBox()
-        floor_level_spin.setRange(0, 1000)
-        floor_level_spin.setValue(self.duck.ground_level_setting)
-
-        # Pet Size
+        # Pet size
         pet_size_label = QLabel(translations.get("pet_size", "Pet size:"))
         pet_size_combo = QComboBox()
         size_options = {1: "x1", 2: "x2", 3: "x3", 5: "x5", 7: "x7", 10: "x10"}
@@ -2945,44 +3107,40 @@ class SettingsWindow(QDialog):
         if current_size_index != -1:
             pet_size_combo.setCurrentIndex(current_size_index)
         else:
-            pet_size_combo.setCurrentIndex(1)  # Default to average value
+            pet_size_combo.setCurrentIndex(1)
 
-        # "Select Skin" and "Select Skins Folder" buttons on the same line
+        # Select Skin & Select Skin Folder
         skin_buttons_layout = QHBoxLayout()
         skin_selection_button = QPushButton(translations.get("select_skin_button", "Select Skin"))
         skin_folder_button = QPushButton(translations.get("select_skin_folder_button", "Select Skins Folder"))
         skin_buttons_layout.addWidget(skin_selection_button)
         skin_buttons_layout.addWidget(skin_folder_button)
-
         skin_selection_button.clicked.connect(self.open_skin_selection)
         skin_folder_button.clicked.connect(self.select_skins_folder)
 
-        # Skins Preview
+        # Skin preview
         skins_label = QLabel(translations.get("skins_preview", "Skins Preview:"))
         skins_scroll = QScrollArea()
         skins_scroll.setObjectName('skinsScroll')
         skins_scroll.setWidgetResizable(True)
-        skins_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # Disable horizontal scrolling
+        skins_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         skins_container = QWidget()
         skins_container.setStyleSheet("background-color: #121212; border-radius: 10px;")
         skins_grid = QGridLayout(skins_container)
         skins_grid.setSpacing(15)
 
-        # Load and display skins from selected folder
         self.skins_scroll = skins_scroll
         self.skins_container = skins_container
         self.skins_grid = skins_grid
         skins_scroll.setWidget(skins_container)
 
-        # Skins folder path
         skins_folder_path = self.duck.skin_folder if self.duck.skin_folder else translations.get("not_selected", "Not selected")
         skins_path_label = QLabel(translations.get("skin_folder_path", "Skins folder path:") + f" {skins_folder_path}")
         skins_path_label.setStyleSheet("color: gray; font-size: 12px;")
         skins_path_label.setAlignment(Qt.AlignLeft)
         self.skins_path_label = skins_path_label
 
-        # Buttons
         buttons_layout = QHBoxLayout()
         save_button = QPushButton(translations.get("save_button", "Save"))
         cancel_button = QPushButton(translations.get("cancel_button", "Cancel"))
@@ -2990,16 +3148,9 @@ class SettingsWindow(QDialog):
         buttons_layout.addWidget(save_button)
         buttons_layout.addWidget(cancel_button)
 
-        # Connect buttons with actions
-        save_button.clicked.connect(lambda: self.save_appearance_settings(
-            floor_level_spin.value(),
-            pet_size_combo.currentData()
-        ))
+        save_button.clicked.connect(lambda: self.save_appearance_settings(pet_size_combo.currentData()))
         cancel_button.clicked.connect(self.close)
 
-        # Add widgets to the main layout
-        layout.addWidget(floor_level_label)
-        layout.addWidget(floor_level_spin)
         layout.addWidget(pet_size_label)
         layout.addWidget(pet_size_combo)
         layout.addLayout(skin_buttons_layout)
@@ -3009,12 +3160,13 @@ class SettingsWindow(QDialog):
         layout.addStretch()
         layout.addLayout(buttons_layout)
 
-        # Initialize list of timers inside method
         self.skin_preview_timers = []
-
-        # Load skins if folder is selected
         if self.duck.skin_folder:
             self.load_skins_from_folder(self.duck.skin_folder)
+
+        self.appearance_page_widgets = {
+            "pet_size_combo": pet_size_combo
+        }
 
         return page
 
@@ -3024,12 +3176,50 @@ class SettingsWindow(QDialog):
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
 
-        # Reset settings button
+        # Floor level
+        floor_level_label = QLabel(translations.get("floor_level", "Floor level (pixels from bottom):"))
+        floor_level_spin = QSpinBox()
+        floor_level_spin.setRange(0, 1000)
+        floor_level_spin.setValue(self.duck.ground_level_setting)
+
+        # Name offset
+        name_offset_label = QLabel(translations.get("name_offset_y", "Name Offset Y (pixels):"))
+        name_offset_spin = QSpinBox()
+        name_offset_spin.setRange(-1000, 1000)
+        name_offset_spin.setValue(self.duck.name_offset_y)
+
+        # Base font size
+        font_base_size_label = QLabel(translations.get("font_base_size", "Base font size:"))
+        font_base_size_spin = QSpinBox()
+        font_base_size_spin.setRange(6, 50)
+        if not hasattr(self.duck, 'font_base_size'):
+            self.duck.font_base_size = 14
+        font_base_size_spin.setValue(self.duck.font_base_size)
+
+        # Language
+        language_label = QLabel(translations.get("language_selection", "Language:"))
+        language_combo = QComboBox()
+        language_options = {
+            'en': 'English',
+            'ru': 'Русский'
+        }
+        for code, name in language_options.items():
+            language_combo.addItem(name, code)
+        current_language_index = language_combo.findData(self.duck.current_language)
+        if current_language_index != -1:
+            language_combo.setCurrentIndex(current_language_index)
+        else:
+            language_combo.setCurrentIndex(0)
+
+        # Run at system startup
+        autostart_checkbox = QCheckBox(translations.get("run_at_system_startup", "Run at system startup"))
+        autostart_checkbox.setChecked(self.duck.autostart_enabled)
+
+        # Reset to default
         reset_button = QPushButton(translations.get("reset_to_default_button", "Reset all settings"))
         reset_button.setObjectName('resetButton')
         reset_button.clicked.connect(self.reset_settings)
 
-        # Buttons
         buttons_layout = QHBoxLayout()
         save_button = QPushButton(translations.get("save_button", "Save"))
         cancel_button = QPushButton(translations.get("cancel_button", "Cancel"))
@@ -3037,12 +3227,35 @@ class SettingsWindow(QDialog):
         buttons_layout.addWidget(save_button)
         buttons_layout.addWidget(cancel_button)
 
+        save_button.clicked.connect(lambda: self.save_advanced_settings(
+            floor_level_spin.value(),
+            name_offset_spin.value(),
+            font_base_size_spin.value(),
+            language_combo.currentData(),
+            autostart_checkbox.isChecked()
+        ))
         cancel_button.clicked.connect(self.close)
 
-        # Add widgets to the main layout
+        layout.addWidget(floor_level_label)
+        layout.addWidget(floor_level_spin)
+        layout.addWidget(name_offset_label)
+        layout.addWidget(name_offset_spin)
+        layout.addWidget(font_base_size_label)
+        layout.addWidget(font_base_size_spin)
+        layout.addWidget(language_label)
+        layout.addWidget(language_combo)
+        layout.addWidget(autostart_checkbox)
         layout.addWidget(reset_button)
         layout.addStretch()
         layout.addLayout(buttons_layout)
+
+        self.advanced_page_widgets = {
+            "floor_level_spin": floor_level_spin,
+            "name_offset_spin": name_offset_spin,
+            "font_base_size_spin": font_base_size_spin,
+            "language_combo": language_combo,
+            "autostart_checkbox": autostart_checkbox
+        }
 
         return page
 
@@ -3052,7 +3265,6 @@ class SettingsWindow(QDialog):
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
 
-        # Application Information
         info_label = QLabel(f"""
             <style>
                 a {{
@@ -3073,7 +3285,6 @@ class SettingsWindow(QDialog):
         info_label.setOpenExternalLinks(True)
         info_label.setAlignment(Qt.AlignLeft)
 
-        # Support buttons
         support_buttons_layout = QHBoxLayout()
         support_button = QPushButton(translations.get("buy_me_a_coffee_button_settings_window", "Buy me a coffee ☕"))
         telegram_button = QPushButton("Telegram")
@@ -3086,7 +3297,6 @@ class SettingsWindow(QDialog):
         telegram_button.clicked.connect(lambda: self.open_link("https://t.me/quackduckapp"))
         github_button.clicked.connect(lambda: self.open_link("https://github.com/KristopherZlo/quackduck"))
 
-        # Buttons
         buttons_layout = QHBoxLayout()
         save_button = QPushButton(translations.get("save_button", "Save"))
         cancel_button = QPushButton(translations.get("cancel_button", "Cancel"))
@@ -3094,11 +3304,9 @@ class SettingsWindow(QDialog):
         buttons_layout.addWidget(save_button)
         buttons_layout.addWidget(cancel_button)
 
-        # Connect buttons with actions
         save_button.clicked.connect(lambda: self.save_about_settings())
         cancel_button.clicked.connect(self.close)
 
-        # Add widgets to the main layout
         layout.addWidget(info_label)
         layout.addLayout(support_buttons_layout)
         layout.addStretch()
@@ -3131,65 +3339,63 @@ class SettingsWindow(QDialog):
         if name:
             characteristics = self.duck.get_name_characteristics(name)
             info_text = "\n".join([f"{key}: {value}" for key, value in characteristics.items()])
-            QApplication.instance().beep()  # Added notification sound
+            QApplication.instance().beep()
             QMessageBox.information(self, translations.get("characteristics_title", "Characteristics"), info_text)
         else:
             QMessageBox.information(self, translations.get("characteristics_title", "Characteristics"), translations.get("characteristics_text", "Enter a name to see characteristics."))
 
-    def save_settings(self, pet_name, mic_index, threshold, sound_enabled, autostart_enabled):
-        # Update duck settings
+    def save_general_settings(self, pet_name, mic_index, threshold, sound_enabled, show_name_checkbox):
         self.duck.pet_name = pet_name
         self.duck.selected_mic_index = mic_index
         self.duck.activation_threshold = threshold
         self.duck.sound_enabled = sound_enabled
-        self.duck.autostart_enabled = autostart_enabled
+        self.duck.show_name = show_name_checkbox
+        self.duck.settings_manager.set_value('show_name', self.duck.show_name)
 
-        language_code = self.general_page_widgets["language_combo"].currentData()
-        self.duck.current_language = language_code
-        self.duck.settings_manager.set_value('current_language', language_code)
-
-        # Reload translations
-        global translations
-        translations = load_translation(language_code)
-        self.duck.apply_settings()
-
-        # Update microphone
+        # Updating the microphone
         self.duck.microphone_listener.update_settings(
             device_index=mic_index,
             activation_threshold=threshold
         )
         self.duck.restart_microphone_listener()
 
-        # Apply settings
         self.duck.apply_settings()
-
-        # Close settings window
         self.close()
 
-    def save_appearance_settings(self, floor_level, pet_size):
-        # Update floor level and pet size
-        self.duck.update_ground_level(floor_level)
+    def save_appearance_settings(self, pet_size):
         self.duck.update_pet_size(pet_size)
-
-        # Apply settings
         self.duck.apply_settings()
-
-        # Close settings window
         self.close()
 
-    def save_advanced_settings(self):
-        # Additional settings can be saved here
+    def save_advanced_settings(self, floor_level, name_offset, font_base_size, language_code, autostart_enabled):
+        self.duck.update_ground_level(floor_level)
+        self.duck.name_offset_y = name_offset
+        self.duck.font_base_size = font_base_size
+        self.duck.current_language = language_code
+        self.duck.autostart_enabled = autostart_enabled
+
+        self.duck.settings_manager.set_value('name_offset_y', name_offset)
+        self.duck.settings_manager.set_value('font_base_size', font_base_size)
+        self.duck.settings_manager.set_value('current_language', language_code)
+
+        if autostart_enabled:
+            self.duck.enable_autostart()
+        else:
+            self.duck.disable_autostart()
+
+        global translations
+        translations = load_translation(language_code)
+
+        self.duck.apply_settings()
         self.close()
 
     def save_about_settings(self):
         self.close()
 
     def reset_settings(self):
-        # Confirm reset settings
         reply = QMessageBox.question(self, translations.get("reset_to_default_title", "Reset settings"),
                                      translations.get("reset_to_default_conformation", "Are you sure you want to reset all settings?"),
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-
         if reply == QMessageBox.Yes:
             self.duck.reset_settings()
             self.duck.apply_settings()
@@ -3206,8 +3412,8 @@ class SettingsWindow(QDialog):
             if filename:
                 success = self.duck.resources.load_skin(filename)
                 if success:
-                    self.duck.selected_skin = filename  # Update selected skin
-                    self.duck.save_settings()  # Save settings
+                    self.duck.selected_skin = filename
+                    self.duck.save_settings()
                     QMessageBox.information(self, translations.get("success", "Success!"), translations.get("skin_loaded_successfully", "Skin loaded successfully."))
                     self.duck.update_duck_skin()
                 else:
@@ -3229,17 +3435,14 @@ class SettingsWindow(QDialog):
             self.load_skins_from_folder(folder)
 
     def load_skins_from_folder(self, folder):
-        # Check if the folder exists
         if not os.path.exists(folder):
             return
 
-        # Stop all timers
         for timer in getattr(self, 'skin_preview_timers', []):
             if timer.isActive():
                 timer.stop()
         self.skin_preview_timers = []
 
-        # Clear the grid
         while self.skins_grid.count():
             item = self.skins_grid.takeAt(0)
             if item.widget():
@@ -3247,9 +3450,8 @@ class SettingsWindow(QDialog):
 
         row = 0
         col = 0
-        max_columns = 3  # Maximum 3 skins per row
-
-        has_skins = False  # Flag indicating presence of skins
+        max_columns = 3
+        has_skins = False
 
         try:
             for skin_file in os.listdir(folder):
@@ -3283,9 +3485,8 @@ class SettingsWindow(QDialog):
 
     def display_skin_preview(self, skin_file, idle_frames, row, col):
         animation_label = QLabel()
-        animation_label.setStyleSheet("background-color: transparent;")  # Transparent background for QLabel
+        animation_label.setStyleSheet("background-color: transparent;")
 
-        # Set card size
         original_size = 64
         scale_factor = 2
         preview_size = int(original_size * scale_factor)
@@ -3313,7 +3514,6 @@ class SettingsWindow(QDialog):
             animation_label.frame_index = (animation_label.frame_index + 1) % frame_count
 
         timer = QTimer()
-        # Save timer
         self.skin_preview_timers.append(timer)
         timer.timeout.connect(update_frame)
         timer.start(150)
@@ -3335,12 +3535,9 @@ class SettingsWindow(QDialog):
 
         skin_name = os.path.basename(skin_file)
         skin_widget.setToolTip(skin_name)
-
-        # Save skin path
         skin_widget.skin_file = skin_file
 
-        # Apply skin on click
-        skin_widget.mousePressEvent = lambda event, skin_file=skin_file: self.apply_skin(skin_file)
+        skin_widget.mousePressEvent = lambda event, sf=skin_file: self.apply_skin(sf)
 
         self.skins_grid.addWidget(skin_widget, row, col)
 
@@ -3352,7 +3549,7 @@ class SettingsWindow(QDialog):
         success = self.duck.resources.load_skin(skin_file)
         if success:
             self.duck.selected_skin = skin_file
-            self.duck.save_settings()  # Save settings
+            self.duck.save_settings()
             QMessageBox.information(
                 self,
                 translations.get("success", "Success!"),
@@ -3376,6 +3573,14 @@ class SettingsWindow(QDialog):
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
+
+    icon_path = resource_path("assets/images/white-quackduck-visible.ico")
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QtGui.QIcon(icon_path))
+    else:
+        logging.error(f"File icons not found: {icon_path}")
+
+
     app.setQuitOnLastWindowClosed(False)
     sys.excepthook = exception_handler
 
