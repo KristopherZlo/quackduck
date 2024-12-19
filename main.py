@@ -1,10 +1,7 @@
 # TODO
 # AUTO UPDATE TEST
-# done Translations of a new buttons
-# done Fix settings icon
-# quit from playful state straight to idle NEED FIX
 
-# IHateThisIdeaCounter = 4
+# IHateThisIdeaCounter = 5
 
 import sys
 import subprocess
@@ -373,23 +370,69 @@ def get_seed_from_name(name):
     return seed
 
 class SettingsManager:
+    """
+    Manages application settings using Qt's QSettings.
+
+    Attributes:
+        _settings: An instance of QSettings for handling key-value pairs.
+    """
     def __init__(self, organization: str = 'zl0yxp', application: str = 'QuackDuck') -> None:
+        """
+        Initializes the SettingsManager with the given organization and application name.
+
+        Args:
+            organization (str): Organization name for QSettings.
+            application (str): Application name for QSettings.
+        """
         self._settings = QtCore.QSettings(organization, application)
 
     def get_value(self, key: str, default=None, value_type=None):
+        """
+        Retrieves a value from the settings.
+
+        Args:
+            key (str): The settings key to retrieve.
+            default: The default value if the key does not exist.
+            value_type: The type of the value to return.
+
+        Returns:
+            The value associated with the key, or the default value if the key does not exist.
+        """
         return self._settings.value(key, defaultValue=default, type=value_type)
 
     def set_value(self, key: str, value) -> None:
+        """
+        Sets a value in the settings.
+
+        Args:
+            key (str): The settings key.
+            value: The value to set.
+        """
         self._settings.setValue(key, value)
 
     def clear(self) -> None:
+        """Clears all settings."""
         self._settings.clear()
 
     def sync(self) -> None:
+        """Synchronizes the settings with the underlying storage."""
         self._settings.sync()
 
 class DebugWindow(QtWidgets.QWidget):
+    """
+    A window for debugging the QuackDuck application.
+
+    Attributes:
+        duck: The main Duck instance being debugged.
+        update_timer: A QTimer to periodically update debug information.
+    """
     def __init__(self, duck):
+        """
+        Initializes the debug window.
+
+        Args:
+            duck: The main Duck instance.
+        """
         super().__init__()
         self.duck = duck
         self.setWindowTitle("QuackDuck Ultimate Debug Mode")
@@ -397,10 +440,10 @@ class DebugWindow(QtWidgets.QWidget):
         self.init_ui()
         self.update_timer = QtCore.QTimer(self)
         self.update_timer.timeout.connect(self.update_debug_info)
-        self.update_timer.start(500)  # обновляем каждые 500ms для более частой актуализации
+        self.update_timer.start(500)
 
     def init_ui(self):
-        # Тёмная тема для окна дебага
+        """Initializes the user interface for the debug window."""
         self.setStyleSheet("""
         QWidget {
             background-color: #2a2a2a;
@@ -444,11 +487,10 @@ class DebugWindow(QtWidgets.QWidget):
         self.tabs = QTabWidget()
         main_layout.addWidget(self.tabs)
 
-        # Вкладка с параметрами приложения (все настройки без ограничений)
         self.params_widget = QWidget()
         self.params_layout = QVBoxLayout(self.params_widget)
 
-        # Общие настройки
+        # General settings
         general_group = QGroupBox("General Settings (No Limits)")
         general_form = QFormLayout()
 
@@ -459,7 +501,7 @@ class DebugWindow(QtWidgets.QWidget):
 
         # Pet size
         self.petSizeSpin = QSpinBox()
-        self.petSizeSpin.setRange(-10, 1000)  # без ограничений, можно очень большой размер
+        self.petSizeSpin.setRange(-1000, 1000)
         self.petSizeSpin.setValue(self.duck.pet_size)
         self.petSizeSpin.valueChanged.connect(self.update_pet_size_spin)
         general_form.addRow("Pet Size:", self.petSizeSpin)
@@ -473,7 +515,7 @@ class DebugWindow(QtWidgets.QWidget):
 
         # Sleep Timeout (sec)
         self.sleepTimeoutSpin = QSpinBox()
-        self.sleepTimeoutSpin.setRange(0, 999999)  # без ограничений
+        self.sleepTimeoutSpin.setRange(0, 999999)
         self.sleepTimeoutSpin.setValue(int(self.duck.sleep_timeout))
         self.sleepTimeoutSpin.valueChanged.connect(self.update_sleep_timeout)
         general_form.addRow("Sleep Timeout (sec):", self.sleepTimeoutSpin)
@@ -537,13 +579,6 @@ class DebugWindow(QtWidgets.QWidget):
         self.nameOffsetSpin.valueChanged.connect(self.update_name_offset)
         general_form.addRow("Name Offset Y:", self.nameOffsetSpin)
 
-        # Any other timings user might want:
-        # For example sound_interval_min, sound_interval_max, etc.
-        # Since the duck's code may not store these directly in attributes accessible,
-        # we can add methods to call or we can just set them if they exist.
-        # We'll assume we can set them directly.
-        # If not existing, we won't break code, just provide them.
-
         self.soundIntervalMinSpin = QDoubleSpinBox()
         self.soundIntervalMinSpin.setRange(0,999999)
         self.soundIntervalMinSpin.setValue(getattr(self.duck,'sound_interval_min',60.0))
@@ -568,7 +603,7 @@ class DebugWindow(QtWidgets.QWidget):
         general_group.setLayout(general_form)
         self.params_layout.addWidget(general_group)
 
-        # Дополнительные кнопки для искусственных событий
+        # Additional buttons for artificial events
         extra_group = QGroupBox("Extra Controls")
         extra_layout = QHBoxLayout()
 
@@ -601,11 +636,11 @@ class DebugWindow(QtWidgets.QWidget):
         self.params_layout.addStretch()
         self.tabs.addTab(self.params_widget, "Parameters & Extra")
 
-        # Вкладка объединения логов, состояний и управления состояниями
+        # Log, state and state management merge tab
         self.logs_states_widget = QWidget()
         logs_states_layout = QVBoxLayout(self.logs_states_widget)
 
-        # Последние 100 состояний
+        # Last 100 states
         state_history_group = QGroupBox("Last 100 States + State Control")
         state_history_vlayout = QVBoxLayout()
 
@@ -632,7 +667,7 @@ class DebugWindow(QtWidgets.QWidget):
         state_history_group.setLayout(state_history_vlayout)
         logs_states_layout.addWidget(state_history_group)
 
-        # Логи
+        # Logs
         logs_group = QGroupBox("Logs")
         logs_group_layout = QVBoxLayout()
         self.log_viewer = QTextEdit()
@@ -650,13 +685,12 @@ class DebugWindow(QtWidgets.QWidget):
         layout.addWidget(btn)
 
     def update_debug_info(self):
-        # Обновим историю состояний, последние 100
+        """Updates the debug information displayed in the window."""
         self.state_history_list.clear()
         history_slice = self.duck.state_history[-100:]
         for t, old_st, new_st in history_slice:
             self.state_history_list.addItem(f"{t}: {old_st} -> {new_st}")
 
-        # Обновим логи
         try:
             log_path = os.path.join(os.path.expanduser('~'), 'quackduck.log')
             if os.path.exists(log_path):
@@ -668,22 +702,7 @@ class DebugWindow(QtWidgets.QWidget):
         except:
             pass
 
-        # Координаты утки обновляются в реальном времени
-        # Мы можем добавить еще какое-то Label для координат (не было в требованиях, но сделаем)
-        # Например, в params_widget.
-        # Однако, для простоты просто обеспечим обновление GUI, ничего не мешает.
-
-        # Если нужно, можно добавить вывод координат где-то в debug window.
-        # (Пользователь не потребовал вывести их тут, но пусть будет)
-        # Добавим под general_group координаты
-        # Уже не просили явно добавить label для координат, но можно было бы.
-        # Если нужно - например:
-        # Not demanded to show coords in a label. But user said "Координаты должны обновляться"
-        # It's presumably done by re-checking duck after user moves. We'll trust user sees them in logs or states.
-
     def trigger_double_click(self):
-        # Имитируем двойной клик по утке
-        # Двойной клик - серия 2 раз подряд mouseDoubleClickEvent
         event = QtGui.QMouseEvent(QtCore.QEvent.MouseButtonDblClick,
                                   QtCore.QPointF(self.duck.duck_x,self.duck.duck_y),
                                   QtCore.Qt.LeftButton,
@@ -705,13 +724,11 @@ class DebugWindow(QtWidgets.QWidget):
         else:
             QtWidgets.QMessageBox.warning(self, "Method not found", f"No method {method_name} found on duck.")
 
-    # Методы обновления параметров
     def update_pet_name(self):
         self.duck.pet_name = self.petNameEdit.text().strip()
         self.duck.apply_settings()
 
     def update_pet_size_spin(self, v):
-        # Ставим размер утки
         self.duck.update_pet_size(v)
         self.duck.apply_settings()
 
@@ -765,10 +782,7 @@ class DebugWindow(QtWidgets.QWidget):
         self.duck.apply_settings()
 
     def update_sound_interval_min(self, val):
-        # Если поля нет - добавим
         self.duck.sound_interval_min = val
-        # duck does not have a direct apply for this, but we trust apply_settings to refresh something if needed
-        # If needed, call duck.save_settings maybe:
         self.duck.apply_settings()
 
     def update_sound_interval_max(self, val):
@@ -1547,7 +1561,23 @@ class PlayfulState(State):
             self.duck.update()
 
 class ResourceManager:
+    """
+    Manages resources such as animations, sounds, and skins for the duck.
+
+    Attributes:
+        scale_factor: The scale factor for resizing resources.
+        pet_size: The size of the pet.
+        animations: A dictionary storing animation frames.
+        sounds: A list of sound file paths.
+    """
     def __init__(self, scale_factor: float, pet_size: int = 3) -> None:
+        """
+        Initializes the resource manager.
+
+        Args:
+            scale_factor (float): The scale factor for resizing resources.
+            pet_size (int): The size of the pet.
+        """
         self.assets_dir = resource_path('assets')
         self.skins_dir = os.path.join(self.assets_dir, 'skins')
         self.current_skin = 'default'
@@ -1609,6 +1639,12 @@ class ResourceManager:
         return True
 
     def load_default_skin(self, lazy: bool = False) -> None:
+        """
+        Loads the default skin resources.
+
+        Args:
+            lazy (bool): If True, loads resources lazily.
+        """
         self.cleanup_temp_dir()
         self.current_skin = 'default'
         skin_path = os.path.join(self.skins_dir, 'default')
@@ -1922,8 +1958,11 @@ class MicrophoneListener(QtCore.QThread):
 
 class Duck(QtWidgets.QWidget):
     """
-    The main class representing the duck pet.
-    Handles states, animations, and interactions.
+    Represents the main duck pet in the application.
+
+    Attributes:
+        settings_manager: Manages settings for the duck.
+        resources: Manages resources such as animations and sounds.
     """
     def __init__(self):
         super().__init__()
@@ -2065,7 +2104,6 @@ class Duck(QtWidgets.QWidget):
         self.random_behavior_timer.stop()
 
     def resume_duck(self):
-        # Возобновляем таймеры и логику
         self.animation_timer.start(100)
         self.position_timer.start(20)
         self.schedule_next_sound()
@@ -2335,7 +2373,12 @@ class Duck(QtWidgets.QWidget):
         self.facing_right = self.direction == 1
 
     def change_state(self, new_state, event=None):
-        # Запомним старое состояние
+        """
+        Changes the state of the duck.
+
+        Args:
+            new_state: The new state to transition to.
+        """
         old_state_name = self.state.__class__.__name__ if self.state else "None"
 
         allowed_wake_states = (DraggingState, PlayfulState, ListeningState, JumpingState, WalkingState)
@@ -2390,7 +2433,6 @@ class Duck(QtWidgets.QWidget):
             self.stop_cursor_shake_detection()
             logging.info("Stopping cursor shake detection.")
 
-        # После смены состояния добавим в историю
         new_state_name = self.state.__class__.__name__ if self.state else "None"
         self.state_history.append((time.strftime("%H:%M:%S"), old_state_name, new_state_name))
         if len(self.state_history) > 10:
@@ -2450,7 +2492,6 @@ class Duck(QtWidgets.QWidget):
         if self.current_frame:
             painter.drawPixmap(0, 0, self.current_frame)
 
-        # Если включён debug_mode, нарисуем коллайдер и координаты
         if self.debug_mode:
             painter.setPen(QtGui.QPen(QtGui.QColor("red"), 2, QtCore.Qt.SolidLine))
             painter.drawRect(0,0,self.duck_width-1,self.duck_height-1)
@@ -2698,13 +2739,11 @@ class Duck(QtWidgets.QWidget):
         self.duck_speed = self.base_duck_speed * (self.pet_size / 3)
         self.resources.set_pet_size(self.pet_size)
 
-        # Перезагружаем спрайты для нового размера
         self.resources.load_sprites_now()
 
         old_width = self.duck_width
         old_height = self.duck_height
 
-        # Обновим current_frame по новой анимации
         self.current_frame = self.resources.get_animation_frame('idle', 0)
         if not self.current_frame:
             self.current_frame = self.resources.get_default_frame()
@@ -2724,18 +2763,11 @@ class Duck(QtWidgets.QWidget):
         self.resize(self.duck_width, self.duck_height)
         self.move(int(self.duck_x), int(self.duck_y))
 
-        # Сохраним класс текущего состояния
         current_state_class = self.state.__class__
-        # Сохраним какие-то нужные параметры, если они нужны
-        # Обычно не нужно, если состояния детерминированы
-
-        # Выходим из текущего состояния
         self.state.exit()
-        # Создаем новое состояние того же класса
         self.state = current_state_class(self)
-        # Входим в новое состояние (перегрузка кадров по новому размеру)
         self.state.enter()
-        # Применим кадр
+
         if hasattr(self.state, 'update_frame'):
             self.state.update_frame()
 
@@ -2849,14 +2881,14 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
                 self.parent.hide()
                 if os.path.exists(self.hidden_icon_path):
                     self.setIcon(QtGui.QIcon(self.hidden_icon_path))
-                self.parent.pause_duck()  # Поставить на паузу при скрытии
+                self.parent.pause_duck()
             else:
                 self.parent.show()
                 self.parent.raise_()
                 self.parent.activateWindow()
                 if os.path.exists(self.visible_icon_path):
                     self.setIcon(QtGui.QIcon(self.visible_icon_path))
-                self.parent.resume_duck()  # Возобновить при показе
+                self.parent.resume_duck()
 
     def setup_menu(self):
         menu = QtWidgets.QMenu()
@@ -3128,7 +3160,6 @@ class SettingsWindow(QMainWindow):
                 padding:4px;
                 color:#ccc;
             }}
-            /* Стили для выпадающего списка QComboBox */
             QComboBox QAbstractItemView {{
                 background: #2f2f2f;
                 border:1px solid #444;
@@ -3247,7 +3278,6 @@ class SettingsWindow(QMainWindow):
         self.petName.setPlaceholderText(self.translations.get("enter_name_placeholder","Name..."))
         self.petName.setText(self.duck.pet_name)
 
-        # Кнопка инфо с эмоджи знака вопроса - увеличим
         name_info_button = QPushButton("❓")
         name_info_button.setFixedSize(36,36)
         font = name_info_button.font()
@@ -3323,15 +3353,13 @@ class SettingsWindow(QMainWindow):
             self.volumeValue.setText(f"{v}%")
             vol = v/100.0
             self.soundEffect.setVolume(vol)
-            self.duck.sound_effect.setVolume(vol) # Изменяем громкость и у реального звука утки
+            self.duck.sound_effect.setVolume(vol)
             self.duck.sound_volume = vol
             self.duck.settings_manager.set_value('sound_volume', vol)
             self.duck.settings_manager.sync()
 
         self.volumeSlider.valueChanged.connect(update_volume)
 
-        # Удаляем valueChanged.connect(self.play_quack_sound)
-        # Вместо этого по отпусканию слайдера проигрываем случайный звук
         self.volumeSlider.sliderReleased.connect(self.play_random_sound_on_volume_release)
 
         self.soundEffect = QSoundEffect()
@@ -3371,7 +3399,6 @@ class SettingsWindow(QMainWindow):
         return w
     
     def play_random_sound_on_volume_release(self):
-        # Проигрываем случайный звук утки при отпускании слайдера громкости, если звук включен
         if self.enableSound.isChecked():
             self.duck.play_random_sound()
 
@@ -3414,7 +3441,6 @@ class SettingsWindow(QMainWindow):
         title.setStyleSheet("font-size:20px;font-weight:bold;color:#fff;border-bottom:1px solid #3a3a3a;padding-bottom:10px;")
         self.appearance_layout.addWidget(title)
 
-        # Добавляем жирный текст и кнопку Skin shop над pet size
         skins_help_box = QHBoxLayout()
         where_to_get_skins_label = QLabel(self.translations.get("where_to_get_skins","Don't know where to get skins?"))
         f = where_to_get_skins_label.font()
@@ -3472,7 +3498,6 @@ class SettingsWindow(QMainWindow):
         self.skins_container.setLayout(self.skins_layout)
 
         self.skins_scroll.setWidget(self.skins_container)
-        # Располагаем на всю оставшуюся ширину
         self.skins_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.appearance_layout.addWidget(self.skins_scroll)
 
@@ -3503,7 +3528,6 @@ class SettingsWindow(QMainWindow):
         while self.skins_layout.count()>0:
             self.skins_layout.takeAt(0)
 
-        # Добавляем дефолтный скин всегда
         self.duck.resources.load_default_skin(lazy=False)
         default_frames = self.duck.resources.get_animation_frames_by_name('idle')
         if default_frames:
@@ -3511,11 +3535,9 @@ class SettingsWindow(QMainWindow):
             if default_item:
                 self.skins_layout.addWidget(default_item)
 
-        # Если папка не указана или не существует - просто не загружаем остальные скины
         if not folder or not os.path.exists(folder):
             return
 
-        # Загружаем остальные скины из папки
         has_skins = False
         for f in os.listdir(folder):
             if f.endswith(".zip"):
@@ -3534,7 +3556,6 @@ class SettingsWindow(QMainWindow):
     def create_default_skin_item(self, frames):
         item = QFrame()
         item.setCursor(Qt.PointingHandCursor)
-        # Добавим hover эффект:
         item.setStyleSheet("""
             QFrame {
                 background:#2f2f2f; border-radius:3px;
@@ -3564,14 +3585,12 @@ class SettingsWindow(QMainWindow):
         update_frame()
         animation_label.timer = timer
 
-        # tooltip для дефолтного скина:
         skin_name_text = "default"
         item.setToolTip(skin_name_text)
 
         item_layout.addWidget(animation_label, alignment=Qt.AlignCenter)
 
         def on_click(event):
-            # Загрузим дефолтный скин
             self.duck.selected_skin = None
             self.duck.resources.load_default_skin(lazy=True)
             self.duck.apply_settings()
@@ -3589,7 +3608,6 @@ class SettingsWindow(QMainWindow):
 
         item = QFrame()
         item.setCursor(Qt.PointingHandCursor)
-        # Добавим hover эффект
         item.setStyleSheet("""
             QFrame {
                 background:#2f2f2f; border-radius:3px;
@@ -3620,7 +3638,6 @@ class SettingsWindow(QMainWindow):
         update_frame()
         animation_label.timer = timer
 
-        # tooltip с именем скина
         skin_name_text = os.path.basename(skin_file)
         item.setToolTip(skin_name_text)
 
@@ -3737,7 +3754,6 @@ class SettingsWindow(QMainWindow):
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply == QMessageBox.Yes:
             self.duck.reset_settings()
-            # После сброса настроек применим оригинальный скин сразу:
             self.duck.selected_skin = None
             self.duck.update_duck_skin()
             self.duck.apply_settings()
