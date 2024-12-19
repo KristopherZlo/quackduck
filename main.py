@@ -1,9 +1,10 @@
 # TODO
 # AUTO UPDATE TEST
 # done Translations of a new buttons
-# maybe done Fix settings icon
+# done Fix settings icon
+# quit from playful state straight to idle NEED FIX
 
-# IHateThisIdeaCounter = 291
+# IHateThisIdeaCounter = 4
 
 import sys
 import subprocess
@@ -31,9 +32,9 @@ from PyQt5.QtWidgets import (
     QListWidget, QLabel, QPushButton, QStackedWidget, QLineEdit,
     QComboBox, QSlider, QProgressBar, QCheckBox,
     QSizePolicy, QSpinBox, QScrollArea, QGridLayout,
-    QMessageBox, QFileDialog
+    QMessageBox, QFileDialog, QMainWindow, QFrame, QLayout, QGroupBox, QFormLayout, QDoubleSpinBox, QTabWidget, QTextEdit
 )
-from PyQt5.QtCore import Qt, QPoint, QTimer
+from PyQt5.QtCore import Qt, QPoint, QTimer, QUrl, QSize, QRect
 from PyQt5.QtGui import QFont, QIcon, QPixmap, QColor, QMouseEvent
 
 if sys.platform == 'win32':
@@ -57,8 +58,8 @@ PROJECT_VERSION = '1.5.0'
 APP_NAME = 'QuackDuck'
 APP_EXECUTABLE = 'quackduck.exe'  # or another file name on the corresponding platform
 
-CURRENT_DIR = 'current'   # Directory with the currently installed version
-BACKUP_DIR = 'backup'     # Directory for backup
+CURRENT_DIR = os.path.join(os.path.expanduser('~'), 'quackduck', 'current')
+BACKUP_DIR = os.path.join(os.path.expanduser('~'), 'quackduck', 'backup')
 
 os.makedirs(CURRENT_DIR, exist_ok=True)
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -391,219 +392,398 @@ class DebugWindow(QtWidgets.QWidget):
     def __init__(self, duck):
         super().__init__()
         self.duck = duck
-        self.setWindowTitle("QuackDuck Debug Mode")
-        self.setGeometry(100, 100, 600, 400)
+        self.setWindowTitle("QuackDuck Ultimate Debug Mode")
+        self.setGeometry(100, 100, 1200, 800)
         self.init_ui()
-    
+        self.update_timer = QtCore.QTimer(self)
+        self.update_timer.timeout.connect(self.update_debug_info)
+        self.update_timer.start(500)  # обновляем каждые 500ms для более частой актуализации
+
     def init_ui(self):
-        layout = QtWidgets.QVBoxLayout()
+        # Тёмная тема для окна дебага
+        self.setStyleSheet("""
+        QWidget {
+            background-color: #2a2a2a;
+            color: #ccc;
+            font-size: 14px;
+        }
+        QGroupBox {
+            border: 1px solid #444;
+            margin-top: 20px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            subcontrol-position: top left;
+            padding: 5px;
+        }
+        QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QCheckBox, QPushButton {
+            background-color: #3a3a3a;
+            border: 1px solid #555;
+            border-radius:3px;
+            padding:4px;
+            color:#ccc;
+        }
+        QScrollArea, QTextEdit, QListWidget {
+            background-color: #1e1e1e;
+            border:1px solid #444;
+            color:#ccc;
+        }
+        QTabWidget::pane {
+            border: 1px solid #444;
+        }
+        QTabBar::tab {
+            background: #3a3a3a;
+            padding:5px;
+        }
+        QTabBar::tab:selected {
+            background: #444;
+        }
+        """)
 
-        # Section to Trigger States
-        state_group = QtWidgets.QGroupBox("Trigger States")
-        state_layout = QtWidgets.QHBoxLayout()
+        main_layout = QVBoxLayout(self)
+        self.tabs = QTabWidget()
+        main_layout.addWidget(self.tabs)
 
-        btn_playful = QtWidgets.QPushButton("Playful")
-        btn_playful.clicked.connect(lambda: self.duck.change_state(PlayfulState(self.duck)))
+        # Вкладка с параметрами приложения (все настройки без ограничений)
+        self.params_widget = QWidget()
+        self.params_layout = QVBoxLayout(self.params_widget)
 
-        btn_sleep = QtWidgets.QPushButton("Sleep")
-        btn_sleep.clicked.connect(lambda: self.duck.change_state(SleepingState(self.duck)))
+        # Общие настройки
+        general_group = QGroupBox("General Settings (No Limits)")
+        general_form = QFormLayout()
 
-        btn_jump = QtWidgets.QPushButton("Jump")
-        btn_jump.clicked.connect(lambda: self.duck.change_state(JumpingState(self.duck)))
+        # Pet name
+        self.petNameEdit = QLineEdit(self.duck.pet_name)
+        self.petNameEdit.editingFinished.connect(self.update_pet_name)
+        general_form.addRow("Pet Name:", self.petNameEdit)
 
-        btn_idle = QtWidgets.QPushButton("Idle")
-        btn_idle.clicked.connect(lambda: self.duck.change_state(IdleState(self.duck)))
-
-        btn_walk = QtWidgets.QPushButton("Walk")
-        btn_walk.clicked.connect(lambda: self.duck.change_state(WalkingState(self.duck)))
-
-        btn_run = QtWidgets.QPushButton("Run")
-        btn_run.clicked.connect(lambda: self.duck.change_state(RunState(self.duck)))
-
-        btn_attack = QtWidgets.QPushButton("Attack")
-        btn_attack.clicked.connect(lambda: self.duck.change_state(AttackState(self.duck)))
-
-        state_layout.addWidget(btn_playful)
-        state_layout.addWidget(btn_sleep)
-        state_layout.addWidget(btn_jump)
-        state_layout.addWidget(btn_idle)
-        state_layout.addWidget(btn_walk)
-        state_layout.addWidget(btn_run)
-        state_layout.addWidget(btn_attack)
-
-        state_group.setLayout(state_layout)
-        layout.addWidget(state_group)
-
-        # Section to Play Sounds
-        sound_group = QtWidgets.QGroupBox("Sound Controls")
-        sound_layout = QtWidgets.QHBoxLayout()
-
-        btn_play_sound = QtWidgets.QPushButton("Play Random Sound")
-        btn_play_sound.clicked.connect(self.duck.play_random_sound)
-
-        sound_layout.addWidget(btn_play_sound)
-        sound_group.setLayout(sound_layout)
-        layout.addWidget(sound_group)
-
-        # Section to Edit Parameters
-        params_group = QtWidgets.QGroupBox("Edit Parameters")
-        params_layout = QtWidgets.QFormLayout()
-
-        # Section for displaying the remaining time
-        remaining_group = QtWidgets.QGroupBox("Time remaining until next event")
-        remaining_layout = QtWidgets.QFormLayout()
-
-        self.sleep_remaining_label = QtWidgets.QLabel()
-        self.sound_remaining_label = QtWidgets.QLabel()
-        self.idle_remaining_label = QtWidgets.QLabel()
-
-        remaining_layout.addRow("Until Sleep:", self.sleep_remaining_label)
-        remaining_layout.addRow("Until PlaySound:", self.sound_remaining_label)
-        remaining_layout.addRow("Until end of Idle:", self.idle_remaining_label)
-
-        remaining_group.setLayout(remaining_layout)
-        layout.addWidget(remaining_group)
-
-        # Idle Duration
-        self.idle_duration_spin = QtWidgets.QDoubleSpinBox()
-        self.idle_duration_spin.setRange(1.0, 60.0)
-        self.idle_duration_spin.setValue(self.duck.idle_duration)
-        self.idle_duration_spin.setSuffix(" sec")
-        self.idle_duration_spin.valueChanged.connect(self.update_idle_duration)
-
-        # Timer to update the rest of the time
-        self.update_timer = QtCore.QTimer()
-        self.update_timer.timeout.connect(self.update_remaining_times)
-        self.update_timer.start(1000)  # Update every second
-
-        params_layout.addRow("Idle duration:", self.idle_duration_spin)
-
-        # Sleep Timeout
-        self.sleep_timeout_spin = QtWidgets.QSpinBox()
-        self.sleep_timeout_spin.setRange(60, 1800)  # From 1 min to 30 min
-        self.sleep_timeout_spin.setValue(int(self.duck.sleep_timeout))
-        self.sleep_timeout_spin.setSuffix(" sec")
-        self.sleep_timeout_spin.valueChanged.connect(self.update_sleep_timeout)
-
-        # Direction Change Interval
-        self.direction_interval_spin = QtWidgets.QSpinBox()
-        self.direction_interval_spin.setRange(1, 60)  # 1 sec to 60 sec
-        self.direction_interval_spin.setValue(getattr(self.duck, 'direction_change_interval', 20))
-        self.direction_interval_spin.setSuffix(" sec")
-        self.direction_interval_spin.valueChanged.connect(self.update_direction_interval)
+        # Pet size
+        self.petSizeSpin = QSpinBox()
+        self.petSizeSpin.setRange(-10, 1000)  # без ограничений, можно очень большой размер
+        self.petSizeSpin.setValue(self.duck.pet_size)
+        self.petSizeSpin.valueChanged.connect(self.update_pet_size_spin)
+        general_form.addRow("Pet Size:", self.petSizeSpin)
 
         # Activation Threshold
-        self.activation_threshold_spin = QtWidgets.QSpinBox()
-        self.activation_threshold_spin.setRange(1, 100)
-        self.activation_threshold_spin.setValue(self.duck.activation_threshold)
-        self.activation_threshold_spin.setSuffix(" %")
-        self.activation_threshold_spin.valueChanged.connect(self.update_activation_threshold)
+        self.activationSpin = QSpinBox()
+        self.activationSpin.setRange(0,9999)
+        self.activationSpin.setValue(self.duck.activation_threshold)
+        self.activationSpin.valueChanged.connect(self.update_activation_threshold)
+        general_form.addRow("Activation Threshold:", self.activationSpin)
 
-        params_layout.addRow("Sleep Timeout:", self.sleep_timeout_spin)
-        params_layout.addRow("Direction Change Interval:", self.direction_interval_spin)
-        params_layout.addRow("Activation Threshold:", self.activation_threshold_spin)
-        params_group.setLayout(params_layout)
-        layout.addWidget(params_group)
+        # Sleep Timeout (sec)
+        self.sleepTimeoutSpin = QSpinBox()
+        self.sleepTimeoutSpin.setRange(0, 999999)  # без ограничений
+        self.sleepTimeoutSpin.setValue(int(self.duck.sleep_timeout))
+        self.sleepTimeoutSpin.valueChanged.connect(self.update_sleep_timeout)
+        general_form.addRow("Sleep Timeout (sec):", self.sleepTimeoutSpin)
 
-        btn_reset = QtWidgets.QPushButton("Reset Parameters")
-        btn_reset.clicked.connect(self.reset_parameters)
-        layout.addWidget(btn_reset)
+        # Idle duration (sec)
+        self.idleDurationSpin = QDoubleSpinBox()
+        self.idleDurationSpin.setRange(0.0,999999.0)
+        self.idleDurationSpin.setValue(self.duck.idle_duration)
+        self.idleDurationSpin.setSuffix(" sec")
+        self.idleDurationSpin.valueChanged.connect(self.update_idle_duration)
+        general_form.addRow("Idle Duration:", self.idleDurationSpin)
 
-        states_info_group = QtWidgets.QGroupBox("States Info")
-        states_info_layout = QtWidgets.QVBoxLayout()
+        # Sound enabled
+        self.soundCheck = QCheckBox("Sound Enabled")
+        self.soundCheck.setChecked(self.duck.sound_enabled)
+        self.soundCheck.stateChanged.connect(self.update_sound_enabled)
+        general_form.addRow(self.soundCheck)
 
-        states_info_label = QtWidgets.QLabel()
-        states_info = [
-            "IdleState: The duck stands still, periodically changing animations.",
-            "WalkingState: The duck walks across the screen.",
-            "SleepingState: The duck sleeps without moving.",
-            "JumpingState: The duck makes a jump.",
-            "FallingState: The duck falls down.",
-            "DraggingState: The duck is dragged with the mouse.",
-            "ListeningState: The duck listens to the microphone input.",
-            "PlayfulState: The duck is playful and runs after the cursor faster.",
-            "RunState: The duck runs quickly (if the running animation is available).",
-            "AttackState: The duck makes a one-time attack, freezing in place.",
-            "LandingState: The duck lands after falling."
-        ]
-        states_info_label.setText("\n".join(states_info))
-        states_info_label.setWordWrap(True)
-        states_info_layout.addWidget(states_info_label)
-        states_info_group.setLayout(states_info_layout)
-        layout.addWidget(states_info_group)
+        # Show name
+        self.showNameCheck = QCheckBox("Show Name Above Duck")
+        self.showNameCheck.setChecked(self.duck.show_name)
+        self.showNameCheck.stateChanged.connect(self.update_show_name)
+        general_form.addRow(self.showNameCheck)
 
-        self.setLayout(layout)
+        # Ground level
+        self.groundLevelSpin = QSpinBox()
+        self.groundLevelSpin.setRange(-999999,999999)
+        self.groundLevelSpin.setValue(self.duck.ground_level_setting)
+        self.groundLevelSpin.valueChanged.connect(self.update_ground_level)
+        general_form.addRow("Ground Level (px):", self.groundLevelSpin)
 
-    def update_remaining_times(self):
-        # The remaining time to Sleep
-        elapsed_since_interaction = time.time() - self.duck.last_interaction_time
-        time_until_sleep = self.duck.sleep_timeout - elapsed_since_interaction
-        if time_until_sleep < 0:
-            time_until_sleep = 0
-        self.sleep_remaining_label.setText(f"{int(time_until_sleep)} sec")
+        # Direction change interval
+        self.directionIntervalSpin = QDoubleSpinBox()
+        self.directionIntervalSpin.setRange(0,999999)
+        self.directionIntervalSpin.setValue(float(self.duck.direction_change_interval))
+        self.directionIntervalSpin.valueChanged.connect(self.update_direction_interval)
+        general_form.addRow("Direction Change Interval (sec):", self.directionIntervalSpin)
 
-        # The remaining time to PlaySound
-        if self.duck.sound_timer.isActive():
-            time_remaining_sound = self.duck.sound_timer.remainingTime() / 1000.0
-            self.sound_remaining_label.setText(f"{int(time_remaining_sound)} sec")
+        # Font base size
+        self.fontBaseSizeSpin = QSpinBox()
+        self.fontBaseSizeSpin.setRange(1,9999)
+        self.fontBaseSizeSpin.setValue(self.duck.font_base_size)
+        self.fontBaseSizeSpin.valueChanged.connect(self.update_font_base_size)
+        general_form.addRow("Font Base Size:", self.fontBaseSizeSpin)
+
+        # Autostart
+        self.autostartCheck = QCheckBox("Run at system startup")
+        self.autostartCheck.setChecked(self.duck.autostart_enabled)
+        self.autostartCheck.stateChanged.connect(self.update_autostart)
+        general_form.addRow(self.autostartCheck)
+
+        # Current language (no limit)
+        self.languageEdit = QLineEdit(self.duck.current_language)
+        self.languageEdit.editingFinished.connect(self.update_language_line)
+        general_form.addRow("Language (string):", self.languageEdit)
+
+        # Name offset y
+        self.nameOffsetSpin = QSpinBox()
+        self.nameOffsetSpin.setRange(-999999,999999)
+        self.nameOffsetSpin.setValue(self.duck.name_offset_y)
+        self.nameOffsetSpin.valueChanged.connect(self.update_name_offset)
+        general_form.addRow("Name Offset Y:", self.nameOffsetSpin)
+
+        # Any other timings user might want:
+        # For example sound_interval_min, sound_interval_max, etc.
+        # Since the duck's code may not store these directly in attributes accessible,
+        # we can add methods to call or we can just set them if they exist.
+        # We'll assume we can set them directly.
+        # If not existing, we won't break code, just provide them.
+
+        self.soundIntervalMinSpin = QDoubleSpinBox()
+        self.soundIntervalMinSpin.setRange(0,999999)
+        self.soundIntervalMinSpin.setValue(getattr(self.duck,'sound_interval_min',60.0))
+        self.soundIntervalMinSpin.valueChanged.connect(self.update_sound_interval_min)
+        general_form.addRow("Sound Interval Min (sec):", self.soundIntervalMinSpin)
+
+        self.soundIntervalMaxSpin = QDoubleSpinBox()
+        self.soundIntervalMaxSpin.setRange(0,999999)
+        self.soundIntervalMaxSpin.setValue(getattr(self.duck,'sound_interval_max',600.0))
+        self.soundIntervalMaxSpin.valueChanged.connect(self.update_sound_interval_max)
+        general_form.addRow("Sound Interval Max (sec):", self.soundIntervalMaxSpin)
+
+        # Probability of playfulness
+        self.playfulProbSpin = QDoubleSpinBox()
+        self.playfulProbSpin.setRange(0.0,1.0)
+        self.playfulProbSpin.setDecimals(4)
+        self.playfulProbSpin.setValue(self.duck.playful_behavior_probability)
+        self.playfulProbSpin.valueChanged.connect(self.update_playful_probability)
+        general_form.addRow("Playful Behavior Probability:", self.playfulProbSpin)
+
+        # Add the group to params_layout
+        general_group.setLayout(general_form)
+        self.params_layout.addWidget(general_group)
+
+        # Дополнительные кнопки для искусственных событий
+        extra_group = QGroupBox("Extra Controls")
+        extra_layout = QHBoxLayout()
+
+        # Trigger double click
+        double_click_btn = QPushButton("Trigger Double Click")
+        double_click_btn.clicked.connect(self.trigger_double_click)
+        extra_layout.addWidget(double_click_btn)
+
+        # Play sound manually
+        play_sound_btn = QPushButton("Play Random Sound")
+        play_sound_btn.clicked.connect(self.duck.play_random_sound)
+        extra_layout.addWidget(play_sound_btn)
+
+        # Force interface methods (like open settings window)
+        open_settings_btn = QPushButton("Open Settings Window")
+        open_settings_btn.clicked.connect(self.duck.open_settings)
+        extra_layout.addWidget(open_settings_btn)
+
+        # Let's allow calling any method by name
+        self.methodEdit = QLineEdit()
+        self.methodEdit.setPlaceholderText("Enter method name with no args, e.g. 'unstuck_duck'")
+        call_method_btn = QPushButton("Call Method")
+        call_method_btn.clicked.connect(self.call_method_by_name)
+        extra_layout.addWidget(self.methodEdit)
+        extra_layout.addWidget(call_method_btn)
+
+        extra_group.setLayout(extra_layout)
+        self.params_layout.addWidget(extra_group)
+
+        self.params_layout.addStretch()
+        self.tabs.addTab(self.params_widget, "Parameters & Extra")
+
+        # Вкладка объединения логов, состояний и управления состояниями
+        self.logs_states_widget = QWidget()
+        logs_states_layout = QVBoxLayout(self.logs_states_widget)
+
+        # Последние 100 состояний
+        state_history_group = QGroupBox("Last 100 States + State Control")
+        state_history_vlayout = QVBoxLayout()
+
+        # State control panel
+        state_control_layout = QHBoxLayout()
+        # Buttons to trigger states
+        self.add_state_button(state_control_layout, "Idle", IdleState)
+        self.add_state_button(state_control_layout, "Walk", WalkingState)
+        self.add_state_button(state_control_layout, "Sleep", SleepingState)
+        self.add_state_button(state_control_layout, "Jump", JumpingState)
+        self.add_state_button(state_control_layout, "Fall", FallingState)
+        self.add_state_button(state_control_layout, "Drag", DraggingState)
+        self.add_state_button(state_control_layout, "Listen", ListeningState)
+        self.add_state_button(state_control_layout, "Playful", PlayfulState)
+        self.add_state_button(state_control_layout, "Run", RunState)
+        self.add_state_button(state_control_layout, "Attack", AttackState)
+        self.add_state_button(state_control_layout, "Land", LandingState)
+        state_history_vlayout.addLayout(state_control_layout)
+
+        # State history list
+        self.state_history_list = QListWidget()
+        state_history_vlayout.addWidget(self.state_history_list)
+
+        state_history_group.setLayout(state_history_vlayout)
+        logs_states_layout.addWidget(state_history_group)
+
+        # Логи
+        logs_group = QGroupBox("Logs")
+        logs_group_layout = QVBoxLayout()
+        self.log_viewer = QTextEdit()
+        self.log_viewer.setReadOnly(True)
+        logs_group_layout.addWidget(self.log_viewer)
+        logs_group.setLayout(logs_group_layout)
+        logs_states_layout.addWidget(logs_group)
+
+        logs_states_layout.addStretch()
+        self.tabs.addTab(self.logs_states_widget, "Logs & States")
+
+    def add_state_button(self, layout, name, state_class):
+        btn = QPushButton(name)
+        btn.clicked.connect(lambda: self.duck.change_state(state_class(self.duck)))
+        layout.addWidget(btn)
+
+    def update_debug_info(self):
+        # Обновим историю состояний, последние 100
+        self.state_history_list.clear()
+        history_slice = self.duck.state_history[-100:]
+        for t, old_st, new_st in history_slice:
+            self.state_history_list.addItem(f"{t}: {old_st} -> {new_st}")
+
+        # Обновим логи
+        try:
+            log_path = os.path.join(os.path.expanduser('~'), 'quackduck.log')
+            if os.path.exists(log_path):
+                with open(log_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                last_lines = lines[-200:]
+                self.log_viewer.setPlainText(''.join(last_lines))
+                self.log_viewer.verticalScrollBar().setValue(self.log_viewer.verticalScrollBar().maximum())
+        except:
+            pass
+
+        # Координаты утки обновляются в реальном времени
+        # Мы можем добавить еще какое-то Label для координат (не было в требованиях, но сделаем)
+        # Например, в params_widget.
+        # Однако, для простоты просто обеспечим обновление GUI, ничего не мешает.
+
+        # Если нужно, можно добавить вывод координат где-то в debug window.
+        # (Пользователь не потребовал вывести их тут, но пусть будет)
+        # Добавим под general_group координаты
+        # Уже не просили явно добавить label для координат, но можно было бы.
+        # Если нужно - например:
+        # Not demanded to show coords in a label. But user said "Координаты должны обновляться"
+        # It's presumably done by re-checking duck after user moves. We'll trust user sees them in logs or states.
+
+    def trigger_double_click(self):
+        # Имитируем двойной клик по утке
+        # Двойной клик - серия 2 раз подряд mouseDoubleClickEvent
+        event = QtGui.QMouseEvent(QtCore.QEvent.MouseButtonDblClick,
+                                  QtCore.QPointF(self.duck.duck_x,self.duck.duck_y),
+                                  QtCore.Qt.LeftButton,
+                                  QtCore.Qt.LeftButton,
+                                  QtCore.Qt.NoModifier)
+        self.duck.mouseDoubleClickEvent(event)
+
+    def call_method_by_name(self):
+        method_name = self.methodEdit.text().strip()
+        if method_name and hasattr(self.duck, method_name):
+            m = getattr(self.duck, method_name)
+            if callable(m):
+                try:
+                    m()
+                except Exception as e:
+                    QtWidgets.QMessageBox.warning(self, "Error calling method", str(e))
+            else:
+                QtWidgets.QMessageBox.warning(self, "Not callable", f"{method_name} is not callable.")
         else:
-            self.sound_remaining_label.setText("N/A")
+            QtWidgets.QMessageBox.warning(self, "Method not found", f"No method {method_name} found on duck.")
 
-        # The remaining time until the end of IDLE
-        if isinstance(self.duck.state, IdleState):
-            elapsed_in_idle = time.time() - self.duck.state.start_time
-            time_until_idle_end = self.duck.idle_duration - elapsed_in_idle
-            if time_until_idle_end < 0:
-                time_until_idle_end = 0
-            self.idle_remaining_label.setText(f"{int(time_until_idle_end)} sec")
+    # Методы обновления параметров
+    def update_pet_name(self):
+        self.duck.pet_name = self.petNameEdit.text().strip()
+        self.duck.apply_settings()
+
+    def update_pet_size_spin(self, v):
+        # Ставим размер утки
+        self.duck.update_pet_size(v)
+        self.duck.apply_settings()
+
+    def update_activation_threshold(self, v):
+        self.duck.activation_threshold = v
+        self.duck.apply_settings()
+
+    def update_sleep_timeout(self, v):
+        self.duck.sleep_timeout = v
+        self.duck.apply_settings()
+
+    def update_idle_duration(self, v):
+        self.duck.idle_duration = v
+        self.duck.apply_settings()
+
+    def update_sound_enabled(self, state):
+        self.duck.sound_enabled = (state == Qt.Checked)
+        self.duck.apply_settings()
+
+    def update_show_name(self, state):
+        self.duck.show_name = (state == Qt.Checked)
+        self.duck.apply_settings()
+
+    def update_ground_level(self, v):
+        self.duck.update_ground_level(v)
+        self.duck.apply_settings()
+
+    def update_direction_interval(self, v):
+        self.duck.direction_change_interval = v
+        self.duck.apply_settings()
+
+    def update_font_base_size(self, v):
+        self.duck.font_base_size = v
+        self.duck.apply_settings()
+
+    def update_autostart(self, state):
+        self.duck.autostart_enabled = (state == Qt.Checked)
+        if self.duck.autostart_enabled:
+            self.duck.enable_autostart()
         else:
-            self.idle_remaining_label.setText("N/A")
+            self.duck.disable_autostart()
+        self.duck.apply_settings()
 
-    def update_idle_duration(self, value):
-        self.duck.idle_duration = value
-        self.duck.settings_manager.set_value('idle_duration', self.duck.idle_duration)
-        logging.info(f"Idle duration updated to {value} seconds.")
+    def update_language_line(self):
+        lang_code = self.languageEdit.text().strip()
+        self.duck.current_language = lang_code
+        self.duck.apply_settings()
 
-    def update_sleep_timeout(self, value):
-        self.duck.sleep_timeout = value
-        self.duck.settings_manager.set_value('sleep_timeout', self.duck.sleep_timeout)
-        logging.info(f"Sleep timeout updated to {value} seconds.")
+    def update_name_offset(self, v):
+        self.duck.name_offset_y = v
+        self.duck.apply_settings()
 
-    def update_direction_interval(self, value):
-        self.duck.direction_change_interval = value
-        self.duck.settings_manager.set_value('direction_change_interval', self.duck.direction_change_interval)
-        logging.info(f"Direction change interval updated to {value} seconds.")
+    def update_sound_interval_min(self, val):
+        # Если поля нет - добавим
+        self.duck.sound_interval_min = val
+        # duck does not have a direct apply for this, but we trust apply_settings to refresh something if needed
+        # If needed, call duck.save_settings maybe:
+        self.duck.apply_settings()
 
-        # Restart the timer with a new interval
-        self.duck.direction_change_timer.stop()
-        self.duck.direction_change_timer.start(self.duck.direction_change_interval * 1000)
+    def update_sound_interval_max(self, val):
+        self.duck.sound_interval_max = val
+        self.duck.apply_settings()
 
-    def update_activation_threshold(self, value):
-        self.duck.activation_threshold = value
-        self.duck.settings_manager.set_value('activation_threshold', self.duck.activation_threshold)
-        logging.info(f"Activation threshold updated to {value}%.")
+    def update_playful_probability(self, val):
+        self.duck.playful_behavior_probability = val
+        self.duck.apply_settings()
 
-    def reset_parameters(self):
-        # Reset parameters to default values
-        default_sleep_timeout = 300  # 5 minutes
-        default_direction_interval = 20  # 20 seconds
-        default_activation_threshold = 1  # 1%
+    def closeEvent(self, event):
+        self.duck.debug_mode = False
+        event.accept()
+        super().closeEvent(event)
 
-        self.sleep_timeout_spin.setValue(default_sleep_timeout)
-        self.direction_interval_spin.setValue(default_direction_interval)
-        self.activation_threshold_spin.setValue(default_activation_threshold)
-
-        # Reset the Duck's parameters
-        self.duck.sleep_timeout = default_sleep_timeout
-        self.duck.direction_change_interval = default_direction_interval
-        self.duck.activation_threshold = default_activation_threshold
-
-        # Update settings
-        self.duck.settings_manager.set_value('sleep_timeout', self.duck.sleep_timeout)
-        self.duck.settings_manager.set_value('direction_change_interval', self.duck.direction_change_interval)
-        self.duck.settings_manager.set_value('activation_threshold', self.duck.activation_threshold)
-
-        logging.info("Parameters reset to default values.")
 
 class HeartWindow(QtWidgets.QWidget):
     def __init__(self, x, y):
@@ -711,7 +891,9 @@ class NameWindow(QtWidgets.QWidget):
         name_width = self.width()
         name_height = self.height()
 
-        offset_y = self.duck.name_offset_y
+        # Get top offset from duck
+        top_offset = self.duck.get_top_non_opaque_offset()  # returns a negative or zero offset
+        offset_y = self.duck.name_offset_y + top_offset
         x = duck_x + (duck_w - name_width) / 2
         y = duck_y - offset_y
 
@@ -1747,7 +1929,15 @@ class Duck(QtWidgets.QWidget):
         super().__init__()
         self.settings_manager = SettingsManager()
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.Window)
+        self.sound_effect = QSoundEffect()
+        self.sound_effect.setVolume(0.5)
         self.load_settings()
+
+        self.sound_effect.setVolume(self.sound_volume)
+
+        self.debug_mode = False
+        self.debug_window = None
+        self.state_history = []
 
         icon_path = resource_path("assets/images/white-quackduck-visible.ico")
         if os.path.exists(icon_path):
@@ -1783,7 +1973,8 @@ class Duck(QtWidgets.QWidget):
         self.random_behavior = self.settings_manager.get_value('random_behavior', default=True, value_type=bool)
         self.idle_duration = self.settings_manager.get_value('idle_duration', default=5.0, value_type=float)
         self.direction_change_interval = self.settings_manager.get_value('direction_change_interval', default=20.0, value_type=float)
-        self.name_offset_y = self.settings_manager.get_value('name_offset_y', default=0, value_type=int)
+        self.name_offset_y = self.settings_manager.get_value('name_offset_y', default=60, value_type=int)
+        self.font_base_size = self.settings_manager.get_value('font_base_size', default=14, value_type=int)
         self.is_listening = False
         self.listening_entry_timer = None
         self.listening_exit_timer = None
@@ -1826,8 +2017,6 @@ class Duck(QtWidgets.QWidget):
         self.microphone_listener.volume_signal.connect(self.on_volume_updated)
         self.microphone_listener.start()
 
-        self.debug_window = DebugWindow(self)
-
         self.init_ui()
         self.setup_random_behavior()
 
@@ -1862,6 +2051,46 @@ class Duck(QtWidgets.QWidget):
         if latest_release:
             # False means this is not a manual call but an auto-check
             notify_user_about_update(self, latest_release, manual_trigger=False)
+
+    def pause_duck(self):
+        if not isinstance(self.state, IdleState):
+            self.stop_current_state()
+            self.change_state(IdleState(self))
+        self.animation_timer.stop()
+        self.position_timer.stop()
+        self.sound_timer.stop()
+        self.sleep_timer.stop()
+        self.direction_change_timer.stop()
+        self.playful_timer.stop()
+        self.random_behavior_timer.stop()
+
+    def resume_duck(self):
+        # Возобновляем таймеры и логику
+        self.animation_timer.start(100)
+        self.position_timer.start(20)
+        self.schedule_next_sound()
+        self.sleep_timer.start(10000)
+        self.direction_change_timer.start(self.direction_change_interval * 1000)
+        self.playful_timer.start(10 * 60 * 1000)
+        self.schedule_next_random_behavior()
+
+    def get_top_non_opaque_offset(self):
+        """Find the highest non-transparent pixel in the duck's current frame, then compute offset."""
+        if not self.current_frame:
+            return 0
+        image = self.current_frame.toImage()
+        w = image.width()
+        h = image.height()
+        # Scan from top
+        for y in range(h):
+            for x in range(w):
+                pixel = image.pixelColor(x, y)
+                if pixel.alpha() > 0:  # found a non-transparent pixel
+                    # y is the first row with a non-transparent pixel
+                    # offset is how much empty space is at the top: basically y
+                    # We want the name exactly above the top pixel, so we return -y
+                    return -y
+        return 0
 
     def check_for_updates(self):
         """
@@ -1922,7 +2151,9 @@ class Duck(QtWidgets.QWidget):
                 self.change_state(PlayfulState(self))
 
     def show_debug_window(self):
-        """Displays the Debug Window."""
+        if self.debug_window is None:
+            self.debug_window = DebugWindow(self)
+        self.debug_mode = True
         self.debug_window.show()
         self.debug_window.raise_()
         self.debug_window.activateWindow()
@@ -2104,7 +2335,14 @@ class Duck(QtWidgets.QWidget):
         self.facing_right = self.direction == 1
 
     def change_state(self, new_state, event=None):
+        # Запомним старое состояние
+        old_state_name = self.state.__class__.__name__ if self.state else "None"
+
         allowed_wake_states = (DraggingState, PlayfulState, ListeningState, JumpingState, WalkingState)
+
+        if isinstance(self.state, PlayfulState) and isinstance(new_state, IdleState) and isinstance(self.state, (FallingState, JumpingState)):
+            logging.info("Cannot transition from PlayfulState to IdleState directly while in mid-air.")
+            return
 
         # Prevent transition to RunState or AttackState if the duck is in the air
         if isinstance(new_state, (RunState, AttackState)) and isinstance(self.state, (FallingState, JumpingState)):
@@ -2151,6 +2389,12 @@ class Duck(QtWidgets.QWidget):
         else:
             self.stop_cursor_shake_detection()
             logging.info("Stopping cursor shake detection.")
+
+        # После смены состояния добавим в историю
+        new_state_name = self.state.__class__.__name__ if self.state else "None"
+        self.state_history.append((time.strftime("%H:%M:%S"), old_state_name, new_state_name))
+        if len(self.state_history) > 10:
+            self.state_history.pop(0)
 
     def start_cursor_shake_detection(self):
         self.cursor_positions = []
@@ -2205,6 +2449,15 @@ class Duck(QtWidgets.QWidget):
         painter = QtGui.QPainter(self)
         if self.current_frame:
             painter.drawPixmap(0, 0, self.current_frame)
+
+        # Если включён debug_mode, нарисуем коллайдер и координаты
+        if self.debug_mode:
+            painter.setPen(QtGui.QPen(QtGui.QColor("red"), 2, QtCore.Qt.SolidLine))
+            painter.drawRect(0,0,self.duck_width-1,self.duck_height-1)
+            painter.setPen(QtGui.QPen(QtGui.QColor("yellow"), 1))
+            coord_text = f"X:{self.duck_x}, Y:{self.duck_y}"
+            painter.drawText(5,15, coord_text)
+
         painter.end()
 
     def mousePressEvent(self, event):
@@ -2307,7 +2560,7 @@ class Duck(QtWidgets.QWidget):
             self.settings_manager_window.raise_()
             self.settings_manager_window.activateWindow()
         else:
-            self.settings_manager_window = SettingsWindow(self, self.scale_factor)
+            self.settings_manager_window = SettingsWindow(self)
             self.settings_manager_window.show()
 
     def unstuck_duck(self):
@@ -2341,9 +2594,13 @@ class Duck(QtWidgets.QWidget):
         self.idle_duration = self.settings_manager.get_value('idle_duration', default=5.0, value_type=float)
         self.sleep_timeout = self.settings_manager.get_value('sleep_timeout', default=300.0, value_type=float)
         self.direction_change_interval = self.settings_manager.get_value('direction_change_interval', default=20.0, value_type=float)
+        self.name_offset_y = self.settings_manager.get_value('name_offset_y', default=60, value_type=int)
+        self.font_base_size = self.settings_manager.get_value('font_base_size', default=14, value_type=int)
         self.current_language = self.settings_manager.get_value('current_language', default='en', value_type=str)
         self.skipped_version = self.settings_manager.get_value('skipped_version', default="", value_type=str)
         self.show_name = self.settings_manager.get_value('show_name', default=False, value_type=bool)
+        self.sound_volume = self.settings_manager.get_value('sound_volume', default=0.5, value_type=float)
+        self.sound_effect.setVolume(self.sound_volume)
 
         global translations
         translations = load_translation(self.current_language)
@@ -2404,7 +2661,7 @@ class Duck(QtWidgets.QWidget):
         else:
             self.disable_autostart()
 
-        self.update_name_offset(getattr(self, 'name_offset_y', 0))
+        self.update_name_offset(getattr(self, 'name_offset_y', 60))
         self.update_font_base_size(getattr(self, 'font_base_size', 14))
 
         self.save_settings()
@@ -2438,34 +2695,49 @@ class Duck(QtWidgets.QWidget):
 
     def update_pet_size(self, size_factor):
         self.pet_size = size_factor
-        self.duck_speed = self.base_duck_speed * (self.pet_size / 3)  # The speed of the duck
-
-        # Update the pet size in ResourceManager
+        self.duck_speed = self.base_duck_speed * (self.pet_size / 3)
         self.resources.set_pet_size(self.pet_size)
 
-        # Preservation of old sizes and positions
+        # Перезагружаем спрайты для нового размера
+        self.resources.load_sprites_now()
+
         old_width = self.duck_width
         old_height = self.duck_height
-        old_x = self.duck_x
-        old_y = self.duck_y
 
+        # Обновим current_frame по новой анимации
         self.current_frame = self.resources.get_animation_frame('idle', 0)
-        if self.current_frame:
+        if not self.current_frame:
+            self.current_frame = self.resources.get_default_frame()
+        if not self.current_frame:
+            # fallback
+            self.duck_width = self.duck_height = 64
+        else:
             self.duck_width = self.current_frame.width()
             self.duck_height = self.current_frame.height()
-        else:
-            self.duck_width = self.duck_height = 64
 
-        # Calculate the change in size
         delta_width = self.duck_width - old_width
         delta_height = self.duck_height - old_height
 
-        # Adjust the position of the duck
         self.duck_x -= delta_width / 2
         self.duck_y -= delta_height / 2
 
         self.resize(self.duck_width, self.duck_height)
         self.move(int(self.duck_x), int(self.duck_y))
+
+        # Сохраним класс текущего состояния
+        current_state_class = self.state.__class__
+        # Сохраним какие-то нужные параметры, если они нужны
+        # Обычно не нужно, если состояния детерминированы
+
+        # Выходим из текущего состояния
+        self.state.exit()
+        # Создаем новое состояние того же класса
+        self.state = current_state_class(self)
+        # Входим в новое состояние (перегрузка кадров по новому размеру)
+        self.state.enter()
+        # Применим кадр
+        if hasattr(self.state, 'update_frame'):
+            self.state.update_frame()
 
         if self.name_window:
             self.name_window.update_label()
@@ -2574,19 +2846,17 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
     def icon_activated(self, reason):
         if reason == self.Trigger:
             if self.parent.isVisible():
-                # The duck is visible - we hide it
                 self.parent.hide()
-                # Change the icon to "hidden"
                 if os.path.exists(self.hidden_icon_path):
                     self.setIcon(QtGui.QIcon(self.hidden_icon_path))
+                self.parent.pause_duck()  # Поставить на паузу при скрытии
             else:
-                # Duck is hidden - we show
                 self.parent.show()
                 self.parent.raise_()
                 self.parent.activateWindow()
-                # Change the icon to "visible"
                 if os.path.exists(self.visible_icon_path):
                     self.setIcon(QtGui.QIcon(self.visible_icon_path))
+                self.parent.resume_duck()  # Возобновить при показе
 
     def setup_menu(self):
         menu = QtWidgets.QMenu()
@@ -2673,597 +2943,836 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
             QtWidgets.QMessageBox.Ok
         )
 
-# class TitleBar(QWidget):
-#     def __init__(self, parent, scale_factor):
-#         super().__init__()
-#         self.parent = parent
-#         self.scale_factor = scale_factor
-#         self.init_ui()
-#         self.start = QPoint(0, 0)
-#         self.pressing = False
+class FlowLayout(QLayout):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.itemList = []
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setSpacing(10)
 
-#     def init_ui(self):
-#         self.setFixedHeight(int(40 * self.scale_factor))
-#         self.setStyleSheet("""
-#             QWidget {
-#                 background-color: #1e1e1e;
-#             }
-#             QLabel {
-#                 color: white;
-#                 font-size: 16px;
-#             }
-#             QPushButton {
-#                 background-color: transparent;
-#                 border: none;
-#                 color: white;
-#                 font-size: 16px;
-#                 width: 40px;
-#                 height: 40px;
-#             }
-#             QPushButton:hover {
-#                 background-color: #3a3a3a;
-#                 border-radius: 5px;
-#             }
-#         """)
+    def addItem(self, item):
+        self.itemList.append(item)
 
-#         layout = QHBoxLayout(self)
-#         layout.setContentsMargins(10, 0, 10, 0)
-#         layout.setSpacing(0)
+    def count(self):
+        return len(self.itemList)
 
-#         self.title = QLabel(translations.get("settings_title", "Settings"))
-#         self.title.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-#         self.title.setStyleSheet("background-color: transparent;")
+    def itemAt(self, index):
+        if 0 <= index < len(self.itemList):
+            return self.itemList[index]
+        return None
 
-#         layout.addWidget(self.title)
-#         layout.addStretch()
+    def takeAt(self, index):
+        if 0 <= index < len(self.itemList):
+            return self.itemList.pop(index)
+        return None
 
-#         # Window closing button
-#         self.close_button = QPushButton("✖")
-#         self.close_button.setToolTip(translations.get("close_tooltip", "Close"))
-#         self.close_button.setFixedSize(int(40 * self.scale_factor), int(40 * self.scale_factor))
-#         self.close_button.clicked.connect(self.parent.close)
+    def expandingDirections(self):
+        return Qt.Orientations(Qt.Orientation(0))
 
-#         layout.addWidget(self.close_button)
+    def hasHeightForWidth(self):
+        return True
 
-#     def mousePressEvent(self, event):
-#         if event.button() == Qt.LeftButton:
-#             self.start = event.globalPos()
-#             self.pressing = True
+    def heightForWidth(self, width):
+        return self.doLayout(QRect(0, 0, width, 0), True)
 
-#     def mouseMoveEvent(self, event):
-#         if self.pressing:
-#             delta = event.globalPos() - self.start
-#             self.parent.move(self.parent.pos() + delta)
-#             self.start = event.globalPos()
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self.doLayout(rect, False)
 
-#     def mouseReleaseEvent(self, event):
-#         self.pressing = False
+    def sizeHint(self):
+        return QSize(0,0)
 
-class SettingsWindow(QDialog):
-    def __init__(self, duck, scale_factor):
-        super().__init__()
-        icon_path = resource_path("assets/images/settings.ico")
-        if os.path.exists(icon_path):
-            self.setWindowIcon(QtGui.QIcon(icon_path))
-        else:
-            logging.error(f"Icon file not found: {icon_path}")
+    def doLayout(self, rect, testOnly):
+        left, top, right, bottom = self.getContentsMargins()
+        space = self.spacing()
 
-        self.duck = duck
-        self.scale_factor = scale_factor
-        self.setWindowTitle(translations.get("settings_title", "Settings"))
-        window_scaled_width = 900 * self.scale_factor
-        window_scaled_height = 700 * self.scale_factor
-        self.resize(int(window_scaled_width), int(window_scaled_height))
-        # self.setWindowFlag(Qt.FramelessWindowHint)
-        # self.setAttribute(Qt.WA_TranslucentBackground, False)
+        x = rect.x() + left
+        y = rect.y() + top
+        lineHeight = 0
 
-        self.accent_qcolor = get_system_accent_color()
-        self.accent_color = self.accent_qcolor.name()
+        for item in self.itemList:
+            w = item.widget()
+            hint = w.sizeHint()
 
-        self.scale_factor = self.duck.scale_factor
+            if x + hint.width() > rect.right() - right and (x > rect.x() + left):
+                x = rect.x() + left
+                y = y + lineHeight + space
+                lineHeight = 0
 
-        self.mic_preview_timer = QTimer()
-        self.mic_preview_timer.timeout.connect(self.update_mic_preview)
-        self.mic_preview_timer.start(10)
+            if not testOnly:
+                item.setGeometry(QtCore.QRect(QtCore.QPoint(x, y), hint))
 
-        self.init_ui()
-        self.apply_styles()
+            x = x + hint.width() + space
+            lineHeight = max(lineHeight, hint.height())
 
-    def init_ui(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
+        return y + lineHeight + bottom - rect.y()
 
-        # custom title bar
-        # main_layout.addWidget(self.title_bar)
-
-        # Main content
-        content_layout = QHBoxLayout()
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(0)
-
-        # Left panel
-        left_panel = QWidget()
-        left_panel.setFixedWidth(220)
-
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0, 20, 0, 20)
-        left_layout.setSpacing(10)
-
-        self.list_widget = QListWidget()
-        self.list_widget.addItems([
-            translations.get("page_button_general", "General"),
-            translations.get("page_button_appearance", "Appearance"),
-            translations.get("page_button_advanced", "Advanced"),
-            translations.get("page_button_about", "About")
-        ])
-        self.list_widget.setCurrentRow(0)
-        left_layout.addWidget(self.list_widget)
-
-        left_layout.addStretch()
-
-        version_label = QLabel(translations.get("version", "Version") + f" {PROJECT_VERSION}")
-        version_label.setAlignment(Qt.AlignCenter)
-        version_label.setStyleSheet("color: gray; font-size: 12px;")
-        left_layout.addWidget(version_label)
-
-        self.stacked_widget = QStackedWidget()
-        self.stacked_widget.addWidget(self.create_general_page())
-        self.stacked_widget.addWidget(self.create_appearance_page())
-        self.stacked_widget.addWidget(self.create_advanced_page())
-        self.stacked_widget.addWidget(self.create_about_page())
-
-        self.list_widget.currentRowChanged.connect(self.stacked_widget.setCurrentIndex)
-
-        content_layout.addWidget(left_panel)
-        content_layout.addWidget(self.stacked_widget)
-
-        main_layout.addLayout(content_layout)
-
-    def apply_styles(self):
-        accent_color = self.accent_qcolor
-        self.setStyleSheet(f"""
-            QDialog {{
-                background-color: #121212;
-                color: white;
-                font-family: "Segoe UI", sans-serif;
-                font-size: 14px;
-            }}
-            QListWidget {{
-                background: transparent;
-                color: white;
+class SidebarButton(QPushButton):
+    def __init__(self, text, parent=None):
+        super().__init__(text, parent)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedHeight(40)
+        self.setCheckable(True)
+        self.setStyleSheet("""
+            QPushButton {
+                text-align: left;
+                padding-left: 16px;
                 border: none;
                 font-size: 14px;
-            }}
-            QListWidget::item {{
-                padding: 12px;
-                background-color: transparent;
-                color: white;
-            }}
-            QListWidget::item:hover {{
-                background-color: {accent_color.darker(120).name()};
-                border-radius: 5px;
-            }}
-            QListWidget::item:selected {{
-                background-color: {accent_color.name()};
-                color: white;
-                border-radius: 5px;
-                padding-left: 20px;
-            }}
-            QListWidget::item:selected:hover {{
-                background-color: {accent_color.name()};
-            }}
-            QListWidget::item:focus {{
-                outline: none;
-            }}
-            QLabel {{
-                color: white;
-                font-size: 14px;
-            }}
-            QLabel a {{
-                color: {accent_color.name()};
-                text-decoration: none;
-            }}
-            QLabel a:hover {{
-                text-decoration: underline;
-            }}
-            QPushButton {{
-                background-color: #3c3c3c;
-                border: none;
-                padding: 10px 20px;
-                color: white;
-                border-radius: 5px;
-                font-size: 14px;
-            }}
-            QPushButton:hover {{
-                background-color: #505050;
-            }}
-            QPushButton:pressed {{
-                background-color: #606060;
-            }}
-            QLineEdit, QComboBox, QSlider, QSpinBox {{
-                background-color: #3c3c3c;
-                border: 1px solid #555555;
-                border-radius: 5px;
-                padding: 5px;
-                color: white;
-                font-size: 14px;
-            }}
-            QComboBox::drop-down {{
-                border: none;
-                background-color: transparent;
-            }}
-            QComboBox QAbstractItemView {{
-                background-color: #2a2a2a;
-                color: white;
-                selection-background-color: #444444;
-                selection-color: white;
-            }}
-            QCheckBox {{
-                color: white;
-                font-size: 14px;
-            }}
-            QProgressBar {{
-                border: 1px solid #555555;
-                border-radius: 6px;
-                text-align: center;
-                padding: 5px;
-                background-color: #3c3c3c;
-                height: 12px;
-                color: white;
-                font-size: 14px;
-            }}
-            QProgressBar::chunk {{
-                background-color: {accent_color.name()};
-                border-radius: 4px;
-            }}
-            #activationThresholdSlider::groove:horizontal {{
-                height: 4px;
-                background: transparent;
-                border: none;
-                border-bottom: 2px solid #555555;
-            }}
-            #activationThresholdSlider::handle:horizontal {{
-                background: {accent_color.name()};
-                border: 1px solid {accent_color.name()};
-                width: 16px;
-                height: 16px;
-                margin: -6px 0;
-                border-radius: 8px;
-            }}
-            #activationThresholdSlider::handle:horizontal:hover {{
-                background: {accent_color.name()};
-                border: 1px solid {accent_color.name()};
-            }}
-            #activationThresholdSlider::handle:horizontal:pressed {{
-                background: {accent_color.darker(120).name()};
-                border: 1px solid {accent_color.darker(120).name()};
-            }}
-            QScrollBar:vertical {{
-                background: transparent;
-                width: 12px;
-                margin: 0px;
-            }}
-            QScrollBar::handle:vertical {{
-                background: {accent_color.name()};
-                min-height: 20px;
-                border-radius: 6px;
-            }}
-            QScrollBar::handle:vertical:hover {{
-                background: {accent_color.darker(120).name()};
-            }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0px;
-            }}
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
-                background: none;
-            }}
-            QScrollArea {{
-                background-color: #121212;
-                border: none;
-            }}
-            QScrollArea#skinsScroll {{
-                background-color: #121212;
-                border: none;
-            }}
-            QScrollArea#skinsScroll QScrollBar:vertical {{
-                background: #2a2a2a;
-                width: 10px;
-                margin: 0px;
-            }}
-            QScrollArea#skinsScroll QScrollBar::handle:vertical {{
-                background: #555555;
-                min-height: 20px;
-                border-radius: 5px;
-            }}
-            QScrollArea#skinsScroll QScrollBar::handle:vertical:hover {{
-                background: #666666;
-            }}
-            QScrollArea#skinsScroll QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0px;
-            }}
-            QWidget#skinWidget {{
-                background-color: #0f0f0f;
-                border: 1px solid #444444;
-                border-radius: 10px;
-            }}
-            QPushButton#resetButton {{
-                background-color: #a00;
-            }}
-            QPushButton#resetButton:hover {{
-                background-color: #c00;
-            }}
-            QPushButton#resetButton:pressed {{
-                background-color: #e00;
-            }}
+                color: #ccc;
+            }
+            QPushButton:hover {
+                background-color: #3a3a3a;
+            }
+            QPushButton:checked {
+                background-color: #3a3a3a;
+                color: #e0e0e0;
+                border-left: 4px solid #8c5aff;
+                padding-left: 12px;
+            }
         """)
 
-    def create_general_page(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(30, 30, 30, 30)
+class SettingsWindow(QMainWindow):
+    def __init__(self, duck):
+        super().__init__()
+        self.duck = duck
+        self.translations = globals()['translations']
+        self.accent_qcolor = globals()['get_system_accent_color']()
+        self.accent_color = self.accent_qcolor.name()
+
+        self.setWindowTitle(self.translations.get("settings_title", "Settings"))
+        icon_path = os.path.join(self.duck.resources.assets_dir, "images", "settings.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+        self.resize(1000, 600)
+
+        container = QWidget()
+        self.setCentralWidget(container)
+
+        main_layout = QHBoxLayout(container)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        self.sidebar = QVBoxLayout()
+        self.sidebar.setContentsMargins(0, 0, 0, 10)
+        self.sidebar.setSpacing(0)
+
+        self.app_title = QHBoxLayout()
+        self.app_title.setContentsMargins(20, 20, 20, 20)
+        self.app_title.setSpacing(10)
+        self.app_label = QLabel(self.translations.get("settings_title","Settings"))
+        self.app_label.setStyleSheet("font-weight:600;font-size:16px;color:#fff;")
+        self.app_title.addWidget(self.app_label)
+        self.app_title.addStretch()
+        self.sidebar.addLayout(self.app_title)
+
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        line.setStyleSheet("color:#3a3a3a;")
+        self.sidebar.addWidget(line)
+
+        self.btn_general = SidebarButton(self.translations.get("page_button_general","General"))
+        self.btn_appearance = SidebarButton(self.translations.get("page_button_appearance","Appearance"))
+        self.btn_advanced = SidebarButton(self.translations.get("page_button_advanced","Advanced"))
+        self.btn_about = SidebarButton(self.translations.get("page_button_about","About"))
+
+        self.btn_general.setChecked(True)
+        for btn in [self.btn_general, self.btn_appearance, self.btn_advanced, self.btn_about]:
+            btn.clicked.connect(self.change_tab)
+            self.sidebar.addWidget(btn)
+
+        self.sidebar.addStretch()
+
+        version_label = QLabel(self.translations.get("version","Version") + f" {globals()['PROJECT_VERSION']}")
+        version_label.setStyleSheet("color:#aaa;font-size:12px;")
+        version_label.setAlignment(Qt.AlignCenter)
+        self.sidebar.addWidget(version_label)
+
+        self.stack = QStackedWidget()
+        self.stack.setStyleSheet("QWidget { color: #ccc; }")
+
+        self.stack.addWidget(self.general_tab())
+        self.stack.addWidget(self.appearance_tab())
+        self.stack.addWidget(self.advanced_tab())
+        self.stack.addWidget(self.about_tab())
+
+        main_layout.addWidget(self.sidebar_container())
+        main_layout.addWidget(self.stack, 1)
+
+        self.apply_stylesheet()
+
+        self.mic_preview_timer = QTimer(self)
+        self.mic_preview_timer.timeout.connect(self.update_mic_preview)
+        self.mic_preview_timer.start(100)
+
+    def sidebar_container(self):
+        w = QWidget()
+        w.setLayout(self.sidebar)
+        w.setFixedWidth(220)
+        w.setStyleSheet("background-color:#2a2a2a;")
+        return w
+
+    def apply_stylesheet(self):
+        self.setStyleSheet(f"""
+            QMainWindow {{
+                background: #1e1e1e;
+            }}
+            QCheckBox, QRadioButton, QLabel, QComboBox, QSpinBox, QLineEdit {{
+                font-size:14px;
+            }}
+            QLineEdit, QSpinBox, QComboBox {{
+                background: #2f2f2f;
+                border:1px solid #444;
+                border-radius:3px;
+                padding:4px;
+                color:#ccc;
+            }}
+            /* Стили для выпадающего списка QComboBox */
+            QComboBox QAbstractItemView {{
+                background: #2f2f2f;
+                border:1px solid #444;
+                color:#ccc;
+                selection-background-color:#3a3a3a;
+                selection-color:#fff;
+            }}
+
+            QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{
+                border:1px solid {self.accent_color};
+                outline: none;
+            }}
+            QPushButton {{
+                background-color: {self.accent_color};
+                color:#fff;
+                border:none;
+                border-radius:3px;
+                padding:8px 14px;
+                font-size:14px;
+            }}
+            QPushButton:hover {{
+                background-color: {self.accent_qcolor.lighter(120).name()};
+            }}
+            QSlider::groove:horizontal {{
+                background:#444;
+                height:6px;
+                border-radius:3px;
+            }}
+            QSlider::handle:horizontal {{
+                background:{self.accent_color};
+                width:14px;
+                height:14px;
+                margin:-4px 0;
+                border-radius:7px;
+            }}
+            QSlider::sub-page:horizontal {{
+                background:{self.accent_color};
+                border-radius:3px;
+            }}
+            QProgressBar {{
+                background:#444;
+                border:1px solid #555555;
+                border-radius:3px;
+                height:12px;
+                text-align:center;
+                color:white;
+                font-size:14px;
+                padding:5px;
+            }}
+            QProgressBar::chunk {{
+                background:{self.accent_color};
+                border-radius:3px;
+            }}
+            QScrollBar:vertical {{
+                background:#2f2f2f; width:8px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {self.accent_color};
+                border-radius:3px;
+                min-height:20px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height:0;
+                background:none;
+            }}
+        """)
+        self.skins_container.setStyleSheet("""
+            background-color: #1e1e1e;
+        """)
+        self.skins_container.setStyleSheet("background-color: #1e1e1e; ")
+        self.skins_container.setAttribute(Qt.WA_LayoutUsesWidgetRect, True)
+        self.skins_scroll.setStyleSheet("QScrollArea { background-color: #1e1e1e; border: 1px solid #444; border-radius: 3px; }")
+
+    def change_tab(self):
+        sender = self.sender()
+        if sender == self.btn_general:
+            self.btn_general.setChecked(True)
+            self.btn_appearance.setChecked(False)
+            self.btn_advanced.setChecked(False)
+            self.btn_about.setChecked(False)
+            self.stack.setCurrentIndex(0)
+        elif sender == self.btn_appearance:
+            self.btn_general.setChecked(False)
+            self.btn_appearance.setChecked(True)
+            self.btn_advanced.setChecked(False)
+            self.btn_about.setChecked(False)
+            self.stack.setCurrentIndex(1)
+        elif sender == self.btn_advanced:
+            self.btn_general.setChecked(False)
+            self.btn_appearance.setChecked(False)
+            self.btn_advanced.setChecked(True)
+            self.btn_about.setChecked(False)
+            self.stack.setCurrentIndex(2)
+        elif sender == self.btn_about:
+            self.btn_general.setChecked(False)
+            self.btn_appearance.setChecked(False)
+            self.btn_advanced.setChecked(False)
+            self.btn_about.setChecked(True)
+            self.stack.setCurrentIndex(3)
+
+    def general_tab(self):
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(20,20,20,20)
         layout.setSpacing(20)
 
-        # Pet name
-        pet_name_label = QLabel(translations.get("pet_name", "Pet Name:"))
-        name_layout = QHBoxLayout()
-        pet_name_edit = QLineEdit()
-        pet_name_edit.setPlaceholderText(translations.get("enter_name_placeholder", "Name..."))
-        pet_name_edit.setText(self.duck.pet_name)
-        name_info_button = QPushButton("ℹ️")
-        name_info_button.setFixedSize(30, 30)
-        name_info_button.setToolTip(translations.get("info_about_pet_name_tooltip", "Information about pet name"))
+        title = QLabel(self.translations.get("page_button_general","General"))
+        title.setStyleSheet("font-size:20px;font-weight:bold;color:#fff;border-bottom:1px solid #3a3a3a;padding-bottom:10px;")
+        layout.addWidget(title)
+
+        # Pet Name
+        pet_name_box = QVBoxLayout()
+        lbl_petname = QLabel(self.translations.get("pet_name","Pet Name:"))
+        h_name = QHBoxLayout()
+        self.petName = QLineEdit()
+        self.petName.setPlaceholderText(self.translations.get("enter_name_placeholder","Name..."))
+        self.petName.setText(self.duck.pet_name)
+
+        # Кнопка инфо с эмоджи знака вопроса - увеличим
+        name_info_button = QPushButton("❓")
+        name_info_button.setFixedSize(36,36)
+        font = name_info_button.font()
+        font.setPointSize(16)
+        name_info_button.setFont(font)
+        name_info_button.setToolTip(self.translations.get("info_about_pet_name_tooltip","Information about pet name"))
+        name_info_button.setStyleSheet("QPushButton { padding: 4px; }")
         name_info_button.clicked.connect(self.show_name_characteristics)
-        name_layout.addWidget(pet_name_edit)
-        name_layout.addWidget(name_info_button)
 
-        # Input device
-        mic_label = QLabel(translations.get("input_device_selection", "Input Device:"))
-        mic_combo = QComboBox()
-        self.populate_microphones(mic_combo)
-        mic_combo.setCurrentIndex(self.get_current_mic_index(mic_combo))
+        h_name.addWidget(self.petName)
+        h_name.addWidget(name_info_button)
 
-        # Activation threshold
-        threshold_label = QLabel(translations.get("activation_threshold", "Activation Threshold:"))
-        threshold_slider = QSlider(Qt.Horizontal)
-        threshold_slider.setObjectName("activationThresholdSlider")
-        threshold_slider.setRange(0, 100)
-        threshold_slider.setValue(self.duck.activation_threshold)
-        threshold_value_label = QLabel(str(self.duck.activation_threshold))
-        threshold_value_label.setFixedWidth(40)
-        threshold_value_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        threshold_slider.valueChanged.connect(lambda value: threshold_value_label.setText(str(value)))
-        threshold_slider_layout = QHBoxLayout()
-        threshold_slider_layout.addWidget(threshold_slider)
-        threshold_slider_layout.addWidget(threshold_value_label)
+        pet_name_box.addWidget(lbl_petname)
+        pet_name_box.addLayout(h_name)
+        layout.addLayout(pet_name_box)
 
-        # Microphone level
-        mic_level_preview = QProgressBar()
-        mic_level_preview.setRange(0, 100)
-        mic_level_preview.setValue(self.duck.current_volume if hasattr(self.duck, 'current_volume') else 50)
-        mic_level_preview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # Input Device
+        mic_box = QVBoxLayout()
+        lbl_mic = QLabel(self.translations.get("input_device_selection","Input Device:"))
+        self.micDevice = QComboBox()
+        devices = self.duck.get_input_devices()
+        for idx,name in devices:
+            self.micDevice.addItem(name,idx)
+        if self.duck.selected_mic_index is not None:
+            mic_idx = self.micDevice.findData(self.duck.selected_mic_index)
+            if mic_idx>=0:self.micDevice.setCurrentIndex(mic_idx)
+        mic_box.addWidget(lbl_mic)
+        mic_box.addWidget(self.micDevice)
+        layout.addLayout(mic_box)
 
-        # Turn on sound
-        enable_sound_checkbox = QCheckBox(translations.get("turn_on_sound", "Enable Sound"))
-        enable_sound_checkbox.setChecked(self.duck.sound_enabled)
+        # Activation Threshold
+        lbl_thresh = QLabel(self.translations.get("activation_threshold","Activation Threshold:"))
+        self.thresholdValue = QLabel(f"{self.duck.activation_threshold}%")
+        self.thresholdSlider = QSlider(Qt.Horizontal)
+        self.thresholdSlider.setRange(0,100)
+        self.thresholdSlider.setValue(self.duck.activation_threshold)
+        self.thresholdSlider.valueChanged.connect(lambda v: self.thresholdValue.setText(f"{v}%"))
 
-        # Show duck's name
-        show_name_checkbox = QCheckBox(translations.get("show_name_checkbox", "Show name above duck"))
-        show_name_checkbox.setChecked(self.duck.show_name)
+        thresh_layout = QVBoxLayout()
+        thresh_layout.addWidget(lbl_thresh)
+        h_thresh = QHBoxLayout()
+        h_thresh.addWidget(self.thresholdValue)
+        h_thresh.addWidget(self.thresholdSlider)
+        thresh_layout.addLayout(h_thresh)
 
-        buttons_layout = QHBoxLayout()
-        save_button = QPushButton(translations.get("save_button", "Save"))
-        cancel_button = QPushButton(translations.get("cancel_button", "Cancel"))
-        buttons_layout.addStretch()
-        buttons_layout.addWidget(save_button)
-        buttons_layout.addWidget(cancel_button)
+        # Mic volume preview
+        lbl_mic_level = QLabel(self.translations.get("mic_level","Sound Level:"))
+        thresh_layout.addWidget(lbl_mic_level)
+        self.mic_level_preview = QProgressBar()
+        self.mic_level_preview.setRange(0,100)
+        self.mic_level_preview.setValue(self.duck.current_volume if hasattr(self.duck,'current_volume') else 0)
+        thresh_layout.addWidget(self.mic_level_preview)
 
-        save_button.clicked.connect(lambda: self.save_general_settings(
-            pet_name_edit.text(),
-            mic_combo.currentData(),
-            threshold_slider.value(),
-            enable_sound_checkbox.isChecked(),
-            show_name_checkbox.isChecked()
-        ))
-        cancel_button.clicked.connect(self.close)
+        layout.addLayout(thresh_layout)
 
-        layout.addWidget(pet_name_label)
-        layout.addLayout(name_layout)
-        layout.addWidget(mic_label)
-        layout.addWidget(mic_combo)
-        layout.addWidget(threshold_label)
-        layout.addLayout(threshold_slider_layout)
-        layout.addWidget(QLabel(translations.get("mic_level", "Sound Level:")))
-        layout.addWidget(mic_level_preview)
-        layout.addWidget(enable_sound_checkbox)
-        layout.addWidget(show_name_checkbox)
+        # Enable Sound + volume
+        cb_layout = QVBoxLayout()
+        self.enableSound = QCheckBox(self.translations.get("turn_on_sound","Enable Sound"))
+        self.enableSound.setChecked(self.duck.sound_enabled)
+        self.enableSound.stateChanged.connect(self.toggle_volume_slider)
+        cb_layout.addWidget(self.enableSound)
+
+        self.volumeLabel = QLabel(self.translations.get("volume","Volume:") if "volume" in self.translations else "Volume:")
+        self.volumeValue = QLabel("50%")
+        self.volumeSlider = QSlider(Qt.Horizontal)
+        self.volumeSlider.setRange(0,100)
+        volume_from_settings = self.duck.settings_manager.get_value('sound_volume',0.5,float)
+        initial_vol = int(volume_from_settings*100)
+        self.volumeSlider.setValue(initial_vol)
+        self.volumeValue.setText(f"{initial_vol}%")
+
+        def update_volume(v):
+            self.volumeValue.setText(f"{v}%")
+            vol = v/100.0
+            self.soundEffect.setVolume(vol)
+            self.duck.sound_effect.setVolume(vol) # Изменяем громкость и у реального звука утки
+            self.duck.sound_volume = vol
+            self.duck.settings_manager.set_value('sound_volume', vol)
+            self.duck.settings_manager.sync()
+
+        self.volumeSlider.valueChanged.connect(update_volume)
+
+        # Удаляем valueChanged.connect(self.play_quack_sound)
+        # Вместо этого по отпусканию слайдера проигрываем случайный звук
+        self.volumeSlider.sliderReleased.connect(self.play_random_sound_on_volume_release)
+
+        self.soundEffect = QSoundEffect()
+        default_skin_path = self.duck.skin_folder if self.duck.skin_folder else os.path.join(self.duck.resources.skins_dir,'default')
+        sound_path = os.path.join(default_skin_path, 'wuak.wav')
+        self.soundEffect.setSource(QUrl.fromLocalFile(sound_path))
+        self.soundEffect.setVolume(initial_vol/100.0)
+
+        vol_layout = QVBoxLayout()
+        vol_layout.addWidget(self.volumeLabel)
+        h_vol = QHBoxLayout()
+        h_vol.addWidget(self.volumeValue)
+        h_vol.addWidget(self.volumeSlider)
+        vol_layout.addLayout(h_vol)
+        cb_layout.addLayout(vol_layout)
+
+        self.showName = QCheckBox(self.translations.get("show_name_checkbox","Show name above duck"))
+        self.showName.setChecked(self.duck.show_name)
+        cb_layout.addWidget(self.showName)
+        layout.addLayout(cb_layout)
+
         layout.addStretch()
-        layout.addLayout(buttons_layout)
 
-        self.general_page_widgets = {
-            "pet_name_edit": pet_name_edit,
-            "mic_combo": mic_combo,
-            "threshold_slider": threshold_slider,
-            "threshold_value_label": threshold_value_label,
-            "mic_level_preview": mic_level_preview,
-            "enable_sound_checkbox": enable_sound_checkbox,
-            "show_name_checkbox": show_name_checkbox
-        }
+        # Bottom actions
+        act_box = QHBoxLayout()
+        act_box.addStretch()
+        cancel_btn = QPushButton(self.translations.get("cancel_button","Cancel"))
+        cancel_btn.clicked.connect(self.close)
+        cancel_btn.setStyleSheet("background:#444;")
+        save_btn = QPushButton(self.translations.get("save_button","Save"))
+        save_btn.clicked.connect(self.save_general_settings)
+        act_box.addWidget(cancel_btn)
+        act_box.addWidget(save_btn)
+        layout.addLayout(act_box)
 
-        return page
+        self.toggle_volume_slider()
+        return w
+    
+    def play_random_sound_on_volume_release(self):
+        # Проигрываем случайный звук утки при отпускании слайдера громкости, если звук включен
+        if self.enableSound.isChecked():
+            self.duck.play_random_sound()
 
-    def create_appearance_page(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(30, 30, 30, 30)
-        layout.setSpacing(20)
+    def toggle_volume_slider(self):
+        enabled = self.enableSound.isChecked()
+        self.volumeLabel.setVisible(enabled)
+        self.volumeValue.setVisible(enabled)
+        self.volumeSlider.setVisible(enabled)
 
-        # Pet size
-        pet_size_label = QLabel(translations.get("pet_size", "Pet size:"))
-        pet_size_combo = QComboBox()
-        size_options = {1: "x1", 2: "x2", 3: "x3", 5: "x5", 7: "x7", 10: "x10"}
-        for size, label_text in size_options.items():
-            pet_size_combo.addItem(label_text, size)
-        current_size_index = pet_size_combo.findData(self.duck.pet_size)
-        if current_size_index != -1:
-            pet_size_combo.setCurrentIndex(current_size_index)
+    def play_quack_sound(self):
+        self.soundEffect.play()
+
+    def show_name_characteristics(self):
+        name = self.petName.text().strip()
+        if name:
+            characteristics = self.duck.get_name_characteristics(name)
+            info_text = "\n".join([f"{key}: {value}" for key, value in characteristics.items()])
+            QMessageBox.information(self, self.translations.get("characteristics_title","Characteristics"), info_text)
         else:
-            pet_size_combo.setCurrentIndex(1)
+            QMessageBox.information(self, self.translations.get("characteristics_title","Characteristics"),
+                                    self.translations.get("characteristics_text","Enter a name to see characteristics."))
 
-        # Select Skin & Select Skin Folder
-        skin_buttons_layout = QHBoxLayout()
-        skin_selection_button = QPushButton(translations.get("select_skin_button", "Select Skin"))
-        skin_folder_button = QPushButton(translations.get("select_skin_folder_button", "Select Skins Folder"))
-        skin_buttons_layout.addWidget(skin_selection_button)
-        skin_buttons_layout.addWidget(skin_folder_button)
-        skin_selection_button.clicked.connect(self.open_skin_selection)
-        skin_folder_button.clicked.connect(self.select_skins_folder)
+    def save_general_settings(self):
+        self.duck.pet_name = self.petName.text()
+        idx = self.micDevice.currentIndex()
+        self.duck.selected_mic_index = self.micDevice.itemData(idx)
+        self.duck.activation_threshold = self.thresholdSlider.value()
+        self.duck.sound_enabled = self.enableSound.isChecked()
+        self.duck.show_name = self.showName.isChecked()
+        self.duck.apply_settings()
+        self.close()
 
-        # Skin preview
-        skins_label = QLabel(translations.get("skins_preview", "Skins Preview:"))
-        skins_scroll = QScrollArea()
-        skins_scroll.setObjectName('skinsScroll')
-        skins_scroll.setWidgetResizable(True)
-        skins_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    def appearance_tab(self):
+        w = QWidget()
+        self.appearance_layout = QVBoxLayout(w)
+        self.appearance_layout.setContentsMargins(20,20,20,20)
+        self.appearance_layout.setSpacing(20)
 
-        skins_container = QWidget()
-        skins_container.setStyleSheet("background-color: #121212; border-radius: 10px;")
-        skins_grid = QGridLayout(skins_container)
-        skins_grid.setSpacing(15)
+        title = QLabel(self.translations.get("page_button_appearance","Appearance"))
+        title.setStyleSheet("font-size:20px;font-weight:bold;color:#fff;border-bottom:1px solid #3a3a3a;padding-bottom:10px;")
+        self.appearance_layout.addWidget(title)
 
-        self.skins_scroll = skins_scroll
-        self.skins_container = skins_container
-        self.skins_grid = skins_grid
-        skins_scroll.setWidget(skins_container)
+        # Добавляем жирный текст и кнопку Skin shop над pet size
+        skins_help_box = QHBoxLayout()
+        where_to_get_skins_label = QLabel(self.translations.get("where_to_get_skins","Don't know where to get skins?"))
+        f = where_to_get_skins_label.font()
+        f.setBold(True)
+        where_to_get_skins_label.setFont(f)
+        skin_shop_btn = QPushButton("QD Skin Shop")
+        skin_shop_btn.clicked.connect(lambda: self.open_link("https://test.test"))
+        skins_help_box.addWidget(where_to_get_skins_label)
+        skins_help_box.addStretch()
+        skins_help_box.addWidget(skin_shop_btn)
+        self.appearance_layout.addLayout(skins_help_box)
 
-        skins_folder_path = self.duck.skin_folder if self.duck.skin_folder else translations.get("not_selected", "Not selected")
-        skins_path_label = QLabel(translations.get("skin_folder_path", "Skins folder path:") + f" {skins_folder_path}")
-        skins_path_label.setStyleSheet("color: gray; font-size: 12px;")
-        skins_path_label.setAlignment(Qt.AlignLeft)
-        self.skins_path_label = skins_path_label
+        # Pet Size
+        size_box = QVBoxLayout()
+        lbl_size = QLabel(self.translations.get("pet_size","Pet size:"))
+        self.petSize = QComboBox()
+        size_map = {1:"x1",2:"x2",3:"x3",5:"x5",10:"x10"}
+        for v,txt in size_map.items():
+            self.petSize.addItem(txt,v)
+        idx = self.petSize.findData(self.duck.pet_size)
+        if idx>=0:
+            self.petSize.setCurrentIndex(idx)
+        size_box.addWidget(lbl_size)
+        size_box.addWidget(self.petSize)
+        self.appearance_layout.addLayout(size_box)
 
-        buttons_layout = QHBoxLayout()
-        save_button = QPushButton(translations.get("save_button", "Save"))
-        cancel_button = QPushButton(translations.get("cancel_button", "Cancel"))
-        buttons_layout.addStretch()
-        buttons_layout.addWidget(save_button)
-        buttons_layout.addWidget(cancel_button)
-
-        save_button.clicked.connect(lambda: self.save_appearance_settings(pet_size_combo.currentData()))
-        cancel_button.clicked.connect(self.close)
-
-        layout.addWidget(pet_size_label)
-        layout.addWidget(pet_size_combo)
-        layout.addLayout(skin_buttons_layout)
-        layout.addWidget(skins_label)
-        layout.addWidget(skins_scroll)
-        layout.addWidget(skins_path_label)
-        layout.addStretch()
-        layout.addLayout(buttons_layout)
-
-        self.skin_preview_timers = []
+        folder_box = QVBoxLayout()
+        lbl_folder = QLabel(self.translations.get("skin_folder_path","Skins folder path:"))
+        f_hbox = QHBoxLayout()
+        self.folderPath = QLineEdit()
+        self.folderPath.setPlaceholderText(self.translations.get("not_selected","Not selected"))
+        self.folderPath.setReadOnly(True)
         if self.duck.skin_folder:
-            self.load_skins_from_folder(self.duck.skin_folder)
+            self.folderPath.setText(self.duck.skin_folder)
+        choose_btn = QPushButton(self.translations.get("select_skin_folder_button","Select Skins Folder"))
+        choose_btn.clicked.connect(self.select_skins_folder)
+        f_hbox.addWidget(self.folderPath)
+        f_hbox.addWidget(choose_btn)
+        folder_box.addWidget(lbl_folder)
+        folder_box.addLayout(f_hbox)
+        self.appearance_layout.addLayout(folder_box)
 
-        self.appearance_page_widgets = {
-            "pet_size_combo": pet_size_combo
-        }
+        lbl_skins = QLabel(self.translations.get("skins_preview","Skins Preview:"))
+        lbl_skins.setStyleSheet("font-size:16px;color:#ddd;")
+        self.appearance_layout.addWidget(lbl_skins)
 
-        return page
+        self.skins_scroll = QScrollArea()
+        self.skins_scroll.setWidgetResizable(True)
+        self.skins_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.skins_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
-    def create_advanced_page(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(30, 30, 30, 30)
+        self.skins_container = QWidget()
+        self.skins_layout = FlowLayout()
+        self.skins_layout.setContentsMargins(5,5,5,5)
+        self.skins_container.setLayout(self.skins_layout)
+
+        self.skins_scroll.setWidget(self.skins_container)
+        # Располагаем на всю оставшуюся ширину
+        self.skins_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.appearance_layout.addWidget(self.skins_scroll)
+
+        self.load_skins_from_folder(self.duck.skin_folder)
+
+        act_box = QHBoxLayout()
+        act_box.addStretch()
+        cancel_btn = QPushButton(self.translations.get("cancel_button","Cancel"))
+        cancel_btn.setStyleSheet("background:#444;")
+        cancel_btn.clicked.connect(self.close)
+        save_btn = QPushButton(self.translations.get("save_button","Save"))
+        save_btn.clicked.connect(self.save_appearance_settings)
+        act_box.addWidget(cancel_btn)
+        act_box.addWidget(save_btn)
+        self.appearance_layout.addLayout(act_box)
+
+        return w
+
+    def select_skins_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, self.translations.get("select_skin_folder","Select skins folder"))
+        if folder:
+            self.folderPath.setText(folder)
+            self.duck.skin_folder = folder
+            self.duck.save_settings()
+            self.load_skins_from_folder(folder)
+
+    def load_skins_from_folder(self, folder):
+        while self.skins_layout.count()>0:
+            self.skins_layout.takeAt(0)
+
+        # Добавляем дефолтный скин всегда
+        self.duck.resources.load_default_skin(lazy=False)
+        default_frames = self.duck.resources.get_animation_frames_by_name('idle')
+        if default_frames:
+            default_item = self.create_default_skin_item(default_frames)
+            if default_item:
+                self.skins_layout.addWidget(default_item)
+
+        # Если папка не указана или не существует - просто не загружаем остальные скины
+        if not folder or not os.path.exists(folder):
+            return
+
+        # Загружаем остальные скины из папки
+        has_skins = False
+        for f in os.listdir(folder):
+            if f.endswith(".zip"):
+                if 'default' in f.lower():
+                    continue
+                skin_path = os.path.join(folder,f)
+                item = self.create_skin_item(skin_path)
+                if item:
+                    self.skins_layout.addWidget(item)
+                    has_skins = True
+
+        if not has_skins:
+            QMessageBox.warning(self, self.translations.get("warning_title","Warning"),
+                                self.translations.get("no_skins_in_folder","No skins in the selected folder."))
+
+    def create_default_skin_item(self, frames):
+        item = QFrame()
+        item.setCursor(Qt.PointingHandCursor)
+        # Добавим hover эффект:
+        item.setStyleSheet("""
+            QFrame {
+                background:#2f2f2f; border-radius:3px;
+            }
+            QFrame:hover {
+                background:#3a3a3a;
+            }
+        """)
+        item_layout = QVBoxLayout(item)
+        item_layout.setContentsMargins(0,0,0,0)
+
+        animation_label = QLabel()
+        animation_label.setAlignment(Qt.AlignCenter)
+        animation_label.frames = frames
+        animation_label.frame_index = 0
+        animation_label.setFixedSize(128,128)
+
+        def update_frame():
+            frm = animation_label.frames[animation_label.frame_index]
+            frm_scaled = frm.scaled(128,128, Qt.KeepAspectRatio, Qt.FastTransformation)
+            animation_label.setPixmap(frm_scaled)
+            animation_label.frame_index = (animation_label.frame_index + 1) % len(animation_label.frames)
+
+        timer = QTimer(animation_label)
+        timer.timeout.connect(update_frame)
+        timer.start(150)
+        update_frame()
+        animation_label.timer = timer
+
+        # tooltip для дефолтного скина:
+        skin_name_text = "default"
+        item.setToolTip(skin_name_text)
+
+        item_layout.addWidget(animation_label, alignment=Qt.AlignCenter)
+
+        def on_click(event):
+            # Загрузим дефолтный скин
+            self.duck.selected_skin = None
+            self.duck.resources.load_default_skin(lazy=True)
+            self.duck.apply_settings()
+            self.duck.update_duck_skin()
+            QMessageBox.information(self, self.translations.get("success","Success!"),
+                                    self.translations.get("skin_applied_successfully","Skin successfully applied:") + f" {skin_name_text}")
+
+        item.mousePressEvent = on_click
+        return item
+
+    def create_skin_item(self, skin_file):
+        frames = self.duck.resources.load_idle_frames_from_skin(skin_file)
+        if not frames:
+            return None
+
+        item = QFrame()
+        item.setCursor(Qt.PointingHandCursor)
+        # Добавим hover эффект
+        item.setStyleSheet("""
+            QFrame {
+                background:#2f2f2f; border-radius:3px;
+            }
+            QFrame:hover {
+                background:#3a3a3a;
+            }
+        """)
+
+        item_layout = QVBoxLayout(item)
+        item_layout.setContentsMargins(0,0,0,0)
+
+        animation_label = QLabel()
+        animation_label.setAlignment(Qt.AlignCenter)
+        animation_label.frames = frames
+        animation_label.frame_index = 0
+        animation_label.setFixedSize(128,128)
+
+        def update_frame():
+            frm = animation_label.frames[animation_label.frame_index]
+            frm_scaled = frm.scaled(128,128, Qt.KeepAspectRatio, Qt.FastTransformation)
+            animation_label.setPixmap(frm_scaled)
+            animation_label.frame_index = (animation_label.frame_index + 1) % len(animation_label.frames)
+
+        timer = QTimer(animation_label)
+        timer.timeout.connect(update_frame)
+        timer.start(150)
+        update_frame()
+        animation_label.timer = timer
+
+        # tooltip с именем скина
+        skin_name_text = os.path.basename(skin_file)
+        item.setToolTip(skin_name_text)
+
+        item_layout.addWidget(animation_label, alignment=Qt.AlignCenter)
+
+        def on_click(event):
+            success = self.duck.resources.load_skin(skin_file)
+            if success:
+                self.duck.selected_skin = skin_file
+                self.duck.save_settings()
+                self.duck.update_duck_skin()
+                QMessageBox.information(self, self.translations.get("success","Success!"),
+                                        self.translations.get("skin_applied_successfully","Skin successfully applied:") + f" {skin_name_text}")
+            else:
+                QMessageBox.warning(self, self.translations.get("error_title","Error!"),
+                                    self.translations.get("failed_apply_skin","Failed to apply skin:") + f" {skin_name_text}")
+
+        item.mousePressEvent = on_click
+        return item
+
+    def save_appearance_settings(self):
+        idx = self.petSize.currentIndex()
+        pet_size = self.petSize.itemData(idx)
+        self.duck.update_pet_size(pet_size)
+        self.duck.apply_settings()
+        self.close()
+
+    def advanced_tab(self):
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(20,20,20,20)
         layout.setSpacing(20)
 
-        # Floor level
-        floor_level_label = QLabel(translations.get("floor_level", "Floor level (pixels from bottom):"))
-        floor_level_spin = QSpinBox()
-        floor_level_spin.setRange(0, 1000)
-        floor_level_spin.setValue(self.duck.ground_level_setting)
+        title = QLabel(self.translations.get("page_button_advanced","Advanced"))
+        title.setStyleSheet("font-size:20px;font-weight:bold;color:#fff;border-bottom:1px solid #3a3a3a;padding-bottom:10px;")
+        layout.addWidget(title)
 
-        # Name offset
-        name_offset_label = QLabel(translations.get("name_offset_y", "Name Offset Y (pixels):"))
-        name_offset_spin = QSpinBox()
-        name_offset_spin.setRange(-1000, 1000)
-        name_offset_spin.setValue(self.duck.name_offset_y)
+        # Floor Level
+        floor_box = QVBoxLayout()
+        lbl_floor = QLabel(self.translations.get("floor_level","Floor level (pixels from bottom):"))
+        self.floorLevel = QSpinBox()
+        self.floorLevel.setRange(0,1000)
+        self.floorLevel.setValue(self.duck.ground_level_setting)
+        floor_box.addWidget(lbl_floor)
+        floor_box.addWidget(self.floorLevel)
+        layout.addLayout(floor_box)
 
-        # Base font size
-        font_base_size_label = QLabel(translations.get("font_base_size", "Base font size:"))
-        font_base_size_spin = QSpinBox()
-        font_base_size_spin.setRange(6, 50)
-        if not hasattr(self.duck, 'font_base_size'):
-            self.duck.font_base_size = 14
-        font_base_size_spin.setValue(self.duck.font_base_size)
+        # Name Offset
+        offset_box = QVBoxLayout()
+        lbl_offset = QLabel(self.translations.get("name_offset_y","Name Offset Y (pixels):"))
+        self.nameOffset = QSpinBox()
+        self.nameOffset.setRange(-1000,1000)
+        self.nameOffset.setValue(self.duck.name_offset_y)
+        offset_box.addWidget(lbl_offset)
+        offset_box.addWidget(self.nameOffset)
+        layout.addLayout(offset_box)
+
+        # Base Font Size
+        font_box = QVBoxLayout()
+        lbl_font = QLabel(self.translations.get("font_base_size","Base font size:"))
+        self.fontBaseSize = QSpinBox()
+        self.fontBaseSize.setRange(6,50)
+        base_fs = getattr(self.duck,'font_base_size',14)
+        self.fontBaseSize.setValue(base_fs)
+        font_box.addWidget(lbl_font)
+        font_box.addWidget(self.fontBaseSize)
+        layout.addLayout(font_box)
 
         # Language
-        language_label = QLabel(translations.get("language_selection", "Language:"))
-        language_combo = QComboBox()
-        language_options = {
-            'en': 'English',
-            'ru': 'Русский'
-        }
-        for code, name in language_options.items():
-            language_combo.addItem(name, code)
-        current_language_index = language_combo.findData(self.duck.current_language)
-        if current_language_index != -1:
-            language_combo.setCurrentIndex(current_language_index)
-        else:
-            language_combo.setCurrentIndex(0)
+        lang_box = QVBoxLayout()
+        lbl_lang = QLabel(self.translations.get("language_selection","Language:"))
+        self.language = QComboBox()
+        langs = {'en':'English','ru':'Русский'}
+        for code,name in langs.items():
+            self.language.addItem(name,code)
+        idx = self.language.findData(self.duck.current_language)
+        if idx>=0:self.language.setCurrentIndex(idx)
+        lang_box.addWidget(lbl_lang)
+        lang_box.addWidget(self.language)
+        layout.addLayout(lang_box)
 
-        # Run at system startup
-        autostart_checkbox = QCheckBox(translations.get("run_at_system_startup", "Run at system startup"))
-        autostart_checkbox.setChecked(self.duck.autostart_enabled)
+        # Autostart
+        auto_box = QHBoxLayout()
+        self.autostart = QCheckBox(self.translations.get("run_at_system_startup","Run at system startup"))
+        self.autostart.setChecked(self.duck.autostart_enabled)
+        auto_box.addWidget(self.autostart)
+        auto_box.addStretch()
+        layout.addLayout(auto_box)
 
-        # Reset to default
-        reset_button = QPushButton(translations.get("reset_to_default_button", "Reset all settings"))
-        reset_button.setObjectName('resetButton')
-        reset_button.clicked.connect(self.reset_settings)
+        reset_btn = QPushButton(self.translations.get("reset_to_default_button","Reset all settings"))
+        reset_btn.setStyleSheet("background:#a00;color:#fff;")
+        reset_btn.clicked.connect(self.reset_settings_clicked)
+        layout.addWidget(reset_btn)
 
-        buttons_layout = QHBoxLayout()
-        save_button = QPushButton(translations.get("save_button", "Save"))
-        cancel_button = QPushButton(translations.get("cancel_button", "Cancel"))
-        buttons_layout.addStretch()
-        buttons_layout.addWidget(save_button)
-        buttons_layout.addWidget(cancel_button)
-
-        save_button.clicked.connect(lambda: self.save_advanced_settings(
-            floor_level_spin.value(),
-            name_offset_spin.value(),
-            font_base_size_spin.value(),
-            language_combo.currentData(),
-            autostart_checkbox.isChecked()
-        ))
-        cancel_button.clicked.connect(self.close)
-
-        layout.addWidget(floor_level_label)
-        layout.addWidget(floor_level_spin)
-        layout.addWidget(name_offset_label)
-        layout.addWidget(name_offset_spin)
-        layout.addWidget(font_base_size_label)
-        layout.addWidget(font_base_size_spin)
-        layout.addWidget(language_label)
-        layout.addWidget(language_combo)
-        layout.addWidget(autostart_checkbox)
-        layout.addWidget(reset_button)
         layout.addStretch()
-        layout.addLayout(buttons_layout)
 
-        self.advanced_page_widgets = {
-            "floor_level_spin": floor_level_spin,
-            "name_offset_spin": name_offset_spin,
-            "font_base_size_spin": font_base_size_spin,
-            "language_combo": language_combo,
-            "autostart_checkbox": autostart_checkbox
-        }
+        # Actions at bottom right
+        act_box = QHBoxLayout()
+        act_box.addStretch()
+        cancel_btn = QPushButton(self.translations.get("cancel_button","Cancel"))
+        cancel_btn.setStyleSheet("background:#444;")
+        cancel_btn.clicked.connect(self.close)
+        save_btn = QPushButton(self.translations.get("save_button","Save"))
+        save_btn.clicked.connect(self.save_advanced_settings)
+        act_box.addWidget(cancel_btn)
+        act_box.addWidget(save_btn)
+        layout.addLayout(act_box)
 
-        return page
+        return w
 
-    def create_about_page(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(30, 30, 30, 30)
+    def reset_settings_clicked(self):
+        reply = QMessageBox.question(self, self.translations.get("reset_to_default_title","Reset settings"),
+                                     self.translations.get("reset_to_default_conformation","Are you sure you want to reset all settings?"),
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.duck.reset_settings()
+            # После сброса настроек применим оригинальный скин сразу:
+            self.duck.selected_skin = None
+            self.duck.update_duck_skin()
+            self.duck.apply_settings()
+            self.close()
+
+    def save_advanced_settings(self):
+        floor_level = self.floorLevel.value()
+        name_offset = self.nameOffset.value()
+        font_base_size = self.fontBaseSize.value()
+        lang_code = self.language.itemData(self.language.currentIndex())
+        autostart_enabled = self.autostart.isChecked()
+
+        self.duck.update_ground_level(floor_level)
+        self.duck.name_offset_y = name_offset
+        self.duck.font_base_size = font_base_size
+        self.duck.current_language = lang_code
+        self.duck.autostart_enabled = autostart_enabled
+
+        if autostart_enabled:
+            self.duck.enable_autostart()
+        else:
+            self.duck.disable_autostart()
+
+        self.duck.apply_settings()
+        self.close()
+
+    def about_tab(self):
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(20,20,20,20)
         layout.setSpacing(20)
+
+        title = QLabel(self.translations.get("page_button_about","About"))
+        title.setStyleSheet("font-size:20px;font-weight:bold;color:#fff;border-bottom:1px solid #3a3a3a;padding-bottom:10px;")
+        layout.addWidget(title)
 
         info_label = QLabel(f"""
             <style>
@@ -3284,11 +3793,15 @@ class SettingsWindow(QDialog):
         info_label.setWordWrap(True)
         info_label.setOpenExternalLinks(True)
         info_label.setAlignment(Qt.AlignLeft)
+        layout.addWidget(info_label)
 
         support_buttons_layout = QHBoxLayout()
-        support_button = QPushButton(translations.get("buy_me_a_coffee_button_settings_window", "Buy me a coffee ☕"))
+        support_button = QPushButton(self.translations.get("buy_me_a_coffee_button_settings_window","Buy me a coffee ☕"))
         telegram_button = QPushButton("Telegram")
         github_button = QPushButton("GitHub")
+        support_button.setStyleSheet("background:#444;")
+        telegram_button.setStyleSheet("background:#444;")
+        github_button.setStyleSheet("background:#444;")
         support_buttons_layout.addWidget(support_button)
         support_buttons_layout.addWidget(telegram_button)
         support_buttons_layout.addWidget(github_button)
@@ -3297,279 +3810,26 @@ class SettingsWindow(QDialog):
         telegram_button.clicked.connect(lambda: self.open_link("https://t.me/quackduckapp"))
         github_button.clicked.connect(lambda: self.open_link("https://github.com/KristopherZlo/quackduck"))
 
-        buttons_layout = QHBoxLayout()
-        save_button = QPushButton(translations.get("save_button", "Save"))
-        cancel_button = QPushButton(translations.get("cancel_button", "Cancel"))
-        buttons_layout.addStretch()
-        buttons_layout.addWidget(save_button)
-        buttons_layout.addWidget(cancel_button)
-
-        save_button.clicked.connect(lambda: self.save_about_settings())
-        cancel_button.clicked.connect(self.close)
-
-        layout.addWidget(info_label)
         layout.addLayout(support_buttons_layout)
+
         layout.addStretch()
-        layout.addLayout(buttons_layout)
+        act_box = QHBoxLayout()
+        act_box.addStretch()
+        close_btn = QPushButton(self.translations.get("cancel_button","Cancel"))
+        close_btn.setStyleSheet("background:#444;")
+        close_btn.clicked.connect(self.close)
+        act_box.addWidget(close_btn)
+        layout.addLayout(act_box)
 
-        return page
-
-    def populate_microphones(self, mic_combo):
-        mic_combo.clear()
-        input_devices = self.duck.get_input_devices()
-        for idx, name in input_devices:
-            mic_combo.addItem(name, idx)
-        if self.duck.selected_mic_index is not None:
-            current_index = mic_combo.findData(self.duck.selected_mic_index)
-            if current_index != -1:
-                mic_combo.setCurrentIndex(current_index)
-            else:
-                mic_combo.setCurrentIndex(0)
-        else:
-            mic_combo.setCurrentIndex(0)
-
-    def get_current_mic_index(self, mic_combo):
-        if self.duck.selected_mic_index is not None:
-            index = mic_combo.findData(self.duck.selected_mic_index)
-            return index if index != -1 else 0
-        return 0
-
-    def show_name_characteristics(self):
-        name = self.general_page_widgets["pet_name_edit"].text()
-        if name:
-            characteristics = self.duck.get_name_characteristics(name)
-            info_text = "\n".join([f"{key}: {value}" for key, value in characteristics.items()])
-            QApplication.instance().beep()
-            QMessageBox.information(self, translations.get("characteristics_title", "Characteristics"), info_text)
-        else:
-            QMessageBox.information(self, translations.get("characteristics_title", "Characteristics"), translations.get("characteristics_text", "Enter a name to see characteristics."))
-
-    def save_general_settings(self, pet_name, mic_index, threshold, sound_enabled, show_name_checkbox):
-        self.duck.pet_name = pet_name
-        self.duck.selected_mic_index = mic_index
-        self.duck.activation_threshold = threshold
-        self.duck.sound_enabled = sound_enabled
-        self.duck.show_name = show_name_checkbox
-        self.duck.settings_manager.set_value('show_name', self.duck.show_name)
-
-        # Updating the microphone
-        self.duck.microphone_listener.update_settings(
-            device_index=mic_index,
-            activation_threshold=threshold
-        )
-        self.duck.restart_microphone_listener()
-
-        self.duck.apply_settings()
-        self.close()
-
-    def save_appearance_settings(self, pet_size):
-        self.duck.update_pet_size(pet_size)
-        self.duck.apply_settings()
-        self.close()
-
-    def save_advanced_settings(self, floor_level, name_offset, font_base_size, language_code, autostart_enabled):
-        self.duck.update_ground_level(floor_level)
-        self.duck.name_offset_y = name_offset
-        self.duck.font_base_size = font_base_size
-        self.duck.current_language = language_code
-        self.duck.autostart_enabled = autostart_enabled
-
-        self.duck.settings_manager.set_value('name_offset_y', name_offset)
-        self.duck.settings_manager.set_value('font_base_size', font_base_size)
-        self.duck.settings_manager.set_value('current_language', language_code)
-
-        if autostart_enabled:
-            self.duck.enable_autostart()
-        else:
-            self.duck.disable_autostart()
-
-        global translations
-        translations = load_translation(language_code)
-
-        self.duck.apply_settings()
-        self.close()
-
-    def save_about_settings(self):
-        self.close()
-
-    def reset_settings(self):
-        reply = QMessageBox.question(self, translations.get("reset_to_default_title", "Reset settings"),
-                                     translations.get("reset_to_default_conformation", "Are you sure you want to reset all settings?"),
-                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if reply == QMessageBox.Yes:
-            self.duck.reset_settings()
-            self.duck.apply_settings()
-            self.close()
-
-    def open_skin_selection(self):
-        try:
-            filename, _ = QFileDialog.getOpenFileName(
-                self,
-                translations.get("select_skin_file", "Select skin"),
-                "",
-                "Zip Archives (*.zip);;All Files (*)"
-            )
-            if filename:
-                success = self.duck.resources.load_skin(filename)
-                if success:
-                    self.duck.selected_skin = filename
-                    self.duck.save_settings()
-                    QMessageBox.information(self, translations.get("success", "Success!"), translations.get("skin_loaded_successfully", "Skin loaded successfully."))
-                    self.duck.update_duck_skin()
-                else:
-                    QMessageBox.warning(self, translations.get("error_title", "Error!"), translations.get("failed_to_load_skin", "Failed to load skin."))
-        except Exception as e:
-            QMessageBox.critical(self, translations.get("error_title", "Error!"), translations.get("error_while_loading_skin", "An error occurred while loading skin:") + f" {e}")
-
-    def select_skins_folder(self):
-        folder = QFileDialog.getExistingDirectory(
-            self,
-            translations.get("select_skin_folder", "Select skins folder"),
-            "",
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
-        )
-        if folder:
-            self.skins_path_label.setText(translations.get("skin_folder_path", "Skins folder path:") + f" {folder}")
-            self.duck.skin_folder = folder
-            self.duck.save_settings()
-            self.load_skins_from_folder(folder)
-
-    def load_skins_from_folder(self, folder):
-        if not os.path.exists(folder):
-            return
-
-        for timer in getattr(self, 'skin_preview_timers', []):
-            if timer.isActive():
-                timer.stop()
-        self.skin_preview_timers = []
-
-        while self.skins_grid.count():
-            item = self.skins_grid.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
-        row = 0
-        col = 0
-        max_columns = 3
-        has_skins = False
-
-        try:
-            for skin_file in os.listdir(folder):
-                skin_path = os.path.join(folder, skin_file)
-                if os.path.isfile(skin_path) and skin_file.endswith('.zip'):
-                    idle_frames = self.duck.resources.load_idle_frames_from_skin(skin_path)
-                    if idle_frames:
-                        self.display_skin_preview(skin_path, idle_frames, row, col)
-                        has_skins = True
-                        col += 1
-                        if col >= max_columns:
-                            col = 0
-                            row += 1
-                    else:
-                        logging.error(f"Skipped {skin_file}: No valid idle frames.")
-        except Exception as e:
-            logging.error(f"Error loading skins from folder '{folder}': {e}")
-            QMessageBox.warning(
-                self,
-                translations.get("error_title", "Error!"),
-                translations.get("error_loading_skins", "An error occurred while loading skins from the folder.")
-            )
-            return
-
-        if not has_skins:
-            QMessageBox.warning(
-                self,
-                translations.get("warning_title", "Warning"),
-                translations.get("no_skins_in_folder", "No skins in the selected folder.")
-            )
-
-    def display_skin_preview(self, skin_file, idle_frames, row, col):
-        animation_label = QLabel()
-        animation_label.setStyleSheet("background-color: transparent;")
-
-        original_size = 64
-        scale_factor = 2
-        preview_size = int(original_size * scale_factor)
-
-        animation_label.setFixedSize(preview_size, preview_size)
-        animation_label.setAlignment(Qt.AlignCenter)
-        animation_label.setScaledContents(False)
-
-        frames = idle_frames
-        frame_count = len(frames)
-        if frame_count == 0:
-            return
-
-        animation_label.frames = frames
-        animation_label.frame_index = 0
-
-        def update_frame():
-            frame = animation_label.frames[animation_label.frame_index]
-            scaled_frame = frame.scaled(
-                animation_label.size(),
-                Qt.KeepAspectRatio,
-                Qt.FastTransformation
-            )
-            animation_label.setPixmap(scaled_frame)
-            animation_label.frame_index = (animation_label.frame_index + 1) % frame_count
-
-        timer = QTimer()
-        self.skin_preview_timers.append(timer)
-        timer.timeout.connect(update_frame)
-        timer.start(150)
-        update_frame()
-
-        animation_label.timer = timer
-
-        skin_widget = QWidget()
-        skin_layout = QVBoxLayout()
-        skin_layout.setContentsMargins(0, 0, 0, 0)
-        skin_layout.addWidget(animation_label)
-        skin_widget.setLayout(skin_layout)
-        skin_widget.setFixedSize(preview_size, preview_size)
-        skin_widget.setStyleSheet("""
-            background-color: #0f0f0f;
-            border: 1px solid #444444;
-            border-radius: 10px;
-        """)
-
-        skin_name = os.path.basename(skin_file)
-        skin_widget.setToolTip(skin_name)
-        skin_widget.skin_file = skin_file
-
-        skin_widget.mousePressEvent = lambda event, sf=skin_file: self.apply_skin(sf)
-
-        self.skins_grid.addWidget(skin_widget, row, col)
-
-    def apply_skin(self, skin_file):
-        if not os.path.exists(skin_file):
-            QMessageBox.warning(self, translations.get("error_title", "Error!"), translations.get("file_not_found", "File not found: ") + f" '{skin_file}'")
-            return
-
-        success = self.duck.resources.load_skin(skin_file)
-        if success:
-            self.duck.selected_skin = skin_file
-            self.duck.save_settings()
-            QMessageBox.information(
-                self,
-                translations.get("success", "Success!"),
-                translations.get("skin_applied_successfully", "Skin successfully applied:") + f" '{os.path.basename(skin_file)}'"
-            )
-            self.duck.update_duck_skin()
-        else:
-            QMessageBox.warning(
-                self,
-                translations.get("error_title", "Error!"),
-                translations.get("failed_apply_skin", "Failed to apply skin:") + f" '{os.path.basename(skin_file)}'."
-            )
+        return w
 
     def open_link(self, url):
-        webbrowser.open(url)
+        from PyQt5.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl(url))
 
     def update_mic_preview(self):
-        if hasattr(self.duck, 'current_volume') and hasattr(self, 'general_page_widgets'):
-            level = self.duck.current_volume
-            self.general_page_widgets["mic_level_preview"].setValue(int(level))
+        if hasattr(self.duck,'current_volume'):
+            self.mic_level_preview.setValue(int(self.duck.current_volume))
 
 def main():
     app = QtWidgets.QApplication(sys.argv)

@@ -22,10 +22,10 @@
     "about_title": "About",
     "settings_title": "Settings",
     "close_tooltip": "Close",
-    "page_button_general": "General",
-    "page_button_appearance": "Appearance",
-    "page_button_advanced": "Advanced",
-    "page_button_about": "About",
+    "page_button_general": "⚙️ General",
+    "page_button_appearance": "🎨 Appearance",
+    "page_button_advanced": "🛠️ Advanced",
+    "page_button_about": "❓ About",
     "version": "Version",
     "pet_name": "Pet's Name:",
     "enter_name_placeholder": "Name...",
@@ -82,5 +82,7 @@
     "update_success_app_will_be_restarted": "The update has been installed successfully. The application will be restarted.",
     "name_offset_y": "Name Offset Y (pixels):",
     "font_base_size": "Base font size:",
-    "show_name_checkbox": "Show name above duck"
+    "show_name_checkbox": "Show name above pet",
+    "volume": "Effects volume:",
+    "where_to_get_skins": "Don't know where to get skins?"
 }
