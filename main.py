@@ -34,7 +34,7 @@ if sys.platform == 'win32':
     import win32gui
 
 from abc import ABC, abstractmethod
-from autoupdater import AutoUpdater
+from autoupdater import AutoUpdater, UpdateWindow
 from typing import Dict, List, Optional, Tuple
 
 from PyQt5 import QtCore, QtGui, QtMultimedia, QtWidgets
@@ -95,6 +95,23 @@ def load_translation(lang_code):
         logging.error(f"File {lang_path} not found.")
         return {}
 
+def cleanup_bak_files(app_dir):
+    """
+    Removes all *.bak files/folders in app_dir that might've been locked previously.
+    """
+    for item in os.listdir(app_dir):
+        if item.endswith('.bak'):
+            bak_path = os.path.join(app_dir, item)
+            try:
+                if os.path.isfile(bak_path) or os.path.islink(bak_path):
+                    os.unlink(bak_path)
+                    logging.info(f"Removed leftover .bak file: {bak_path}")
+                elif os.path.isdir(bak_path):
+                    shutil.rmtree(bak_path)
+                    logging.info(f"Removed leftover .bak folder: {bak_path}")
+            except Exception as e:
+                logging.error(f"Could not remove leftover .bak: {bak_path}, error={e}")
+
 # Languages: en / ru
 current_language = 'en'
 translations = load_translation(current_language)
@@ -130,17 +147,15 @@ def notify_user_about_update(duck, latest_release, manual_trigger=False):
 
     clicked_button = msg.clickedButton()
     if clicked_button == yes_button:
-        success = duck.updater.download_and_install(latest_release, CURRENT_DIR, BACKUP_DIR)
-        if success:
-            QMessageBox.information(
-                duck,
-                translations.get("update_success", "Successfully updated"),
-                translations.get("update_success_app_will_be_restarted", 
-                                 "The update has been installed successfully. The application will be restarted.")
-            )
-            exe_path = os.path.join(CURRENT_DIR, APP_EXECUTABLE)
-            duck.updater.restart_app(exe_path)
-            duck.close()
+        app_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+        upd_win = UpdateWindow(
+            autoupdater=duck.updater,
+            current_version=PROJECT_VERSION,
+            app_dir=app_dir,
+            exe_name="quackduck.exe",  # или другое имя .exe
+            parent=duck
+        )
+        upd_win.exec_()
     elif clicked_button == skip_button:
         duck.set_skipped_version(latest_version)
         if manual_trigger:
@@ -3577,18 +3592,18 @@ class SettingsWindow(QMainWindow):
         title.setStyleSheet(f"font-size:{title_font_size}px;font-weight:bold;color:#fff;border-bottom:1px solid #3a3a3a;padding-bottom:{s(10)}px;")
         self.appearance_layout.addWidget(title)
 
-        skins_help_box = QHBoxLayout()
-        where_to_get_skins_label = QLabel(self.translations.get("where_to_get_skins","Don't know where to get skins?"))
-        f = where_to_get_skins_label.font()
-        f.setBold(True)
-        where_to_get_skins_label.setFont(f)
-        skin_shop_btn = QPushButton("QD Skin Shop")
-        skin_shop_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        skin_shop_btn.clicked.connect(lambda: self.open_link("https://test.test"))
-        skins_help_box.addWidget(where_to_get_skins_label)
-        skins_help_box.addStretch()
-        skins_help_box.addWidget(skin_shop_btn)
-        self.appearance_layout.addLayout(skins_help_box)
+        # skins_help_box = QHBoxLayout()
+        # where_to_get_skins_label = QLabel(self.translations.get("where_to_get_skins","Don't know where to get skins?"))
+        # f = where_to_get_skins_label.font()
+        # f.setBold(True)
+        # where_to_get_skins_label.setFont(f)
+        # skin_shop_btn = QPushButton("QD Skin Shop")
+        # skin_shop_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        # skin_shop_btn.clicked.connect(lambda: self.open_link("https://test.test"))
+        # skins_help_box.addWidget(where_to_get_skins_label)
+        # skins_help_box.addStretch()
+        # skins_help_box.addWidget(skin_shop_btn)
+        # self.appearance_layout.addLayout(skins_help_box)
 
         # Pet Size
         size_box = QVBoxLayout()
@@ -4079,6 +4094,11 @@ def main():
         app.setWindowIcon(QtGui.QIcon(icon_path))
     else:
         logging.error(f"File icons not found: {icon_path}")
+
+    # Check command-line args
+    if '--cleanup-bak' in sys.argv:
+        app_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+        cleanup_bak_files(app_dir)
 
     app.setQuitOnLastWindowClosed(False)
     sys.excepthook = exception_handler
