@@ -1,7 +1,5 @@
 # QuackDuck 🦆 - Interactive Virtual Pet
 
-![QuackDuck Logo](assets/images/white-quackduck-visible.ico)
-
 QuackDuck is an interactive virtual pet duck developed in Python using PyQt5. The application offers a variety of skins, animations, and sound effects, providing an engaging and personalized experience for each user.
 
 ## 🚀 Key Features
