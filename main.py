@@ -32,6 +32,7 @@ if sys.platform == 'win32':
     import win32api
     import win32con
     import win32gui
+    import win32process
 
 from abc import ABC, abstractmethod
 from autoupdater import AutoUpdater, UpdateWindow
@@ -59,7 +60,7 @@ logging.basicConfig(
 )
 
 # PROJECT VERSION
-PROJECT_VERSION = '1.5.0'
+PROJECT_VERSION = '1.5.1'
 
 GLOBAL_DEBUG_MODE = False
 
@@ -80,11 +81,16 @@ def log_call_stack():
 def resource_path(relative_path):
     """Receives an absolute path to a resource file, works both in development mode and after packaging with Pyinstaller."""
     try:
-        # Pyinstaller creates a temporary folder and keeps the way to _meipass
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
+        # Base path: directory of the executable file or current working directory
+        if getattr(sys, 'frozen', False):  # Nuitka creates attribute 'frozen'
+            base_path = os.path.dirname(sys.executable)
+        else:
+            base_path = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(base_path, relative_path)
+    except Exception as e:
+        logging.error(f"Error calculating path for {relative_path}: {e}")
+        # Return the relative path as fallback
+        return relative_path
 
 def load_translation(lang_code):
     try:
@@ -119,10 +125,18 @@ translations = load_translation(current_language)
 def notify_user_about_update(duck, latest_release, manual_trigger=False):
     """
     Show a window with a suggestion to update or skip the version.
-    When "Yes" is click > launch a new autoupdater.
+    When "Yes" is clicked > launch a new autoupdater.
     """
     latest_version = latest_release['tag_name'].lstrip('v')
     release_notes = latest_release.get('body', '')
+    github_url = latest_release.get('html_url', '#')  # Link to the release
+
+    # Limit the release notes length to 600 characters
+    if len(release_notes) > 600:
+        release_notes = release_notes[:600] + '...'
+
+    # Append a link to the full changelog
+    release_notes += f"\n\nGithub Change log: {github_url}"
 
     # If the version was previously skipped and this is NOT a manual check, we leave
     if duck.skipped_version == latest_version and not manual_trigger:
@@ -133,7 +147,7 @@ def notify_user_about_update(duck, latest_release, manual_trigger=False):
 
     message_template = translations.get(
         "new_version_available_text",
-        f"A new version {latest_version} is available\n\nWhat's new:\n{release_notes}\n\nDo you want to install the new update?"
+        f"A new version {latest_version} is available\n\nWhat's new:\n{{release_notes}}\n\nDo you want to install the new update?"
     )
     message = message_template.format(latest_version=latest_version, release_notes=release_notes)
     msg.setText(message)
@@ -152,7 +166,7 @@ def notify_user_about_update(duck, latest_release, manual_trigger=False):
             autoupdater=duck.updater,
             current_version=PROJECT_VERSION,
             app_dir=app_dir,
-            exe_name="quackduck.exe",  # или другое имя .exe
+            exe_name="quackduck.exe",
             parent=duck
         )
         upd_win.exec_()
@@ -280,13 +294,10 @@ class Duck(QtWidgets.QWidget):
         self.cursor_shake_timer = QtCore.QTimer()
         self.cursor_shake_timer.timeout.connect(self.check_cursor_shake)
 
-        self.sound_effect = QSoundEffect()
-        self.sound_effect.setVolume(0.5)
-
         self.selected_mic_index = self.settings_manager.get_value('selected_mic_index', default=None, value_type=int)
         self.activation_threshold = self.settings_manager.get_value('activation_threshold', default=10, value_type=int)
         self.sound_enabled = self.settings_manager.get_value('sound_enabled', default=True, value_type=bool)
-        self.autostart_enabled = self.settings_manager.get_value('autostart_enabled', default=True, value_type=bool)
+        self.autostart_enabled = self.settings_manager.get_value('autostart_enabled', default=False, value_type=bool)
         self.playful_behavior_probability = self.settings_manager.get_value('playful_behavior_probability', default=0.1, value_type=float)
         self.ground_level_setting = self.settings_manager.get_value('ground_level', default=0, value_type=int)
         self.skin_folder = self.settings_manager.get_value('skin_folder', default=None, value_type=str)
@@ -380,29 +391,49 @@ class Duck(QtWidgets.QWidget):
 
     def check_foreground_fullscreen_winapi(self):
         """
-        Check if the foreground window is truly fullscreen using WinAPI
+        Checks if the foreground window is truly fullscreen using WinAPI
         (GetForegroundWindow, GetWindowRect, MonitorFromWindow, etc.).
-        If it is fullscreen (and not our own window), pause the duck.
-        Otherwise resume.
+        If it is fullscreen (and not our own window), the duck is paused.
+        Otherwise, it resumes.
         """
-        # Only do this on Windows. If on other OS, skip.
         if not sys.platform.startswith("win"):
             return
 
         hwnd_foreground = win32gui.GetForegroundWindow()
         if not hwnd_foreground:
-            # No foreground window at all -> likely desktop or something else
+            # No foreground window detected -> likely the desktop or similar
             if self.is_paused_for_fullscreen:
                 self.resume_duck()
                 self.is_paused_for_fullscreen = False
             return
 
-        left, top, right, bottom = win32gui.GetWindowRect(hwnd_foreground)
+        # Retrieve the class name and process name of the active window
+        class_name = win32gui.GetClassName(hwnd_foreground)
+        _, process_id = win32process.GetWindowThreadProcessId(hwnd_foreground)
+        process_name = ""
+        try:
+            h_process = win32api.OpenProcess(win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ, False, process_id)
+            exe_name = win32process.GetModuleFileNameEx(h_process, 0)
+            process_name = os.path.basename(exe_name)
+            win32api.CloseHandle(h_process)
+        except Exception as e:
+            logging.error(f"Failed to retrieve process name: {e}")
 
+        # Check if the active window is the desktop (Explorer)
+        if class_name in {"Progman", "WorkerW"} or process_name.lower() == "explorer.exe":
+            # Resume the duck if paused for fullscreen
+            if self.is_paused_for_fullscreen:
+                self.resume_duck()
+                self.is_paused_for_fullscreen = False
+            return
+
+        # Get window and monitor dimensions
+        left, top, right, bottom = win32gui.GetWindowRect(hwnd_foreground)
         monitor = win32api.MonitorFromWindow(hwnd_foreground, win32con.MONITOR_DEFAULTTONEAREST)
         monitor_info = win32api.GetMonitorInfo(monitor)
         mon_left, mon_top, mon_right, mon_bottom = monitor_info["Monitor"]
 
+        # Determine if the foreground window is fullscreen
         is_foreground_fullscreen = (
             left == mon_left and
             top == mon_top and
@@ -412,13 +443,13 @@ class Duck(QtWidgets.QWidget):
 
         if is_foreground_fullscreen:
             if not self.is_paused_for_fullscreen:
-                logging.info("A fullscreen application is detected via WinAPI -> Pausing duck.")
+                logging.info("Fullscreen application detected — pausing the duck.")
                 self.pause_duck()
                 self.is_paused_for_fullscreen = True
         else:
             # Not fullscreen
             if self.is_paused_for_fullscreen:
-                logging.info("Fullscreen application is closed or minimized -> Resuming duck.")
+                logging.info("Fullscreen application closed or minimized — resuming the duck.")
                 self.resume_duck()
                 self.is_paused_for_fullscreen = False
 
@@ -543,28 +574,40 @@ class Duck(QtWidgets.QWidget):
         """
         if self.debug_window is None:
             self.debug_window = DebugWindow(self)
+            self.debug_window.destroyed.connect(self.on_debug_window_closed)
         self.debug_mode = True
         self.debug_window.show()
         self.debug_window.raise_()
         self.debug_window.activateWindow()
 
+    def on_debug_window_closed(self):
+        self.debug_window = None
+        self.debug_mode = False
+
     def play_random_sound(self):
         """
-        Play a random duck sound, if sound is enabled. 
-        Also schedule the next random sound after a random interval.
+        Plays a random sound file using the ResourceManager with proper error handling.
         """
-        if not self.sound_enabled:
-            self.schedule_next_sound()
-            return
-        sound_file = self.resources.get_random_sound()
-        if sound_file:
+        try:
+            # Retrieve a random sound from the ResourceManager
+            sound_file = self.resources.get_random_sound()
+            if not sound_file:
+                logging.warning("No sound files available to play.")
+                return
+
+            logging.info(f"Attempting to play sound: {sound_file}")
             url = QtCore.QUrl.fromLocalFile(sound_file)
             self.sound_effect.setSource(url)
+
+            # Ensure the sound source is valid
+            if not self.sound_effect.isLoaded():
+                raise RuntimeError(f"Failed to load sound file: {sound_file}")
+
+            # Play the sound
             self.sound_effect.play()
-            logging.info(f"Played sound: {sound_file}")
-        else:
-            logging.warning("No sound files available to play.")
-        self.schedule_next_sound()
+            logging.info("Sound playback started successfully.")
+        except Exception as e:
+            logging.error(f"Error playing sound: {e}")
 
     def mouseReleaseEvent(self, event):
         self.state.handle_mouse_release(event)
@@ -638,6 +681,15 @@ class Duck(QtWidgets.QWidget):
         """
         Spawn a small heart sprite above the duck.
         """
+        if hasattr(self, 'heart_window') and self.heart_window:
+            try:
+                self.heart_window.close()
+                self.heart_window.deleteLater()
+            except Exception as e:
+                logging.warning(f"Failed to safely delete HeartWindow: {e}")
+            finally:
+                self.heart_window = None
+
         heart_x = self.duck_x + self.current_frame.width() / 2
         heart_y = self.duck_y
         self.heart_window = HeartWindow(heart_x, heart_y)
@@ -877,9 +929,15 @@ class Duck(QtWidgets.QWidget):
 
     def update_position(self):
         """
-        Called by self.position_timer. Moves the duck according to current state logic. 
-        Also updates the name window if it's visible.
+        Update the duck's position and manage attached components.
         """
+        if hasattr(self, 'heart_window') and self.heart_window:
+            try:
+                self.heart_window.update()
+            except RuntimeError:
+                logging.warning("HeartWindow was already deleted. Resetting reference.")
+                self.heart_window = None
+
         self.state.update_position()
         if self.name_window and self.show_name and self.pet_name.strip():
             self.name_window.update_position()
@@ -1028,12 +1086,23 @@ class Duck(QtWidgets.QWidget):
         """
         If the settings window is already open, bring it to the front; otherwise create and show it.
         """
-        if hasattr(self, 'settings_window') and self.settings_manager_window.isVisible():
-            self.settings_manager_window.raise_()
-            self.settings_manager_window.activateWindow()
+        if hasattr(self, 'settings_manager_window') and self.settings_manager_window is not None:
+            if self.settings_manager_window.isVisible():
+                self.settings_manager_window.raise_()
+                self.settings_manager_window.activateWindow()
+            else:
+                self.settings_manager_window.show()
         else:
             self.settings_manager_window = SettingsWindow(self)
             self.settings_manager_window.show()
+
+            self.settings_manager_window.destroyed.connect(self.clear_settings_window)
+
+    def clear_settings_window(self):
+        """
+        Clear the reference to the settings window when it is closed.
+        """
+        self.settings_manager_window = None
 
     def unstuck_duck(self):
         """
@@ -1050,6 +1119,8 @@ class Duck(QtWidgets.QWidget):
         """
         Stop microphone listener and then allow the app to close.
         """
+        if hasattr(self, 'heart_window') and self.heart_window:
+            self.heart_window.deleteLater()
         self.microphone_listener.stop()
         self.microphone_listener.wait()
         event.accept()
@@ -1063,7 +1134,7 @@ class Duck(QtWidgets.QWidget):
         self.activation_threshold = self.settings_manager.get_value('activation_threshold', default=1, value_type=int)
         self.sound_response_probability = self.settings_manager.get_value('sound_response_probability', default=0.01, value_type=float)
         self.sound_enabled = self.settings_manager.get_value('sound_enabled', default=True, value_type=bool)
-        self.autostart_enabled = self.settings_manager.get_value('autostart_enabled', default=True, value_type=bool)
+        self.autostart_enabled = self.settings_manager.get_value('autostart_enabled', default=False, value_type=bool)
         self.playful_behavior_probability = self.settings_manager.get_value('playful_behavior_probability', default=0.1, value_type=float)
         self.ground_level_setting = self.settings_manager.get_value('ground_level', default=0, value_type=int)
         self.ground_level = self.get_ground_level()
@@ -1163,7 +1234,7 @@ class Duck(QtWidgets.QWidget):
         self.direction_change_timer.start(int(self.direction_change_interval * 1000))
 
         # Update name window if needed.
-        if self.show_name and self.pet_name.strip():
+        if self.show_name and self.pet_name.strip() and self.isVisible():
             if not self.name_window:
                 self.name_window = NameWindow(self)
             else:
@@ -1194,7 +1265,7 @@ class Duck(QtWidgets.QWidget):
         self.duck_speed = self.base_duck_speed * (self.pet_size / 3)
         self.resources.set_pet_size(self.pet_size)
 
-        self.resources.load_sprites_now()
+        self.resources.load_sprites_now(force_reload=True)
 
         old_width = self.duck_width
         old_height = self.duck_height
@@ -1355,7 +1426,7 @@ class DebugWindow(QtWidgets.QWidget):
         self.init_ui()
         self.update_timer = QtCore.QTimer(self)
         self.update_timer.timeout.connect(self.update_debug_info)
-        self.update_timer.start(500)
+        self.update_timer.start(1000)
 
     def init_ui(self):
         """Initializes the user interface for the debug window."""
@@ -1582,15 +1653,6 @@ class DebugWindow(QtWidgets.QWidget):
         state_history_group.setLayout(state_history_vlayout)
         logs_states_layout.addWidget(state_history_group)
 
-        # Logs
-        logs_group = QGroupBox("Logs")
-        logs_group_layout = QVBoxLayout()
-        self.log_viewer = QTextEdit()
-        self.log_viewer.setReadOnly(True)
-        logs_group_layout.addWidget(self.log_viewer)
-        logs_group.setLayout(logs_group_layout)
-        logs_states_layout.addWidget(logs_group)
-
         logs_states_layout.addStretch()
         self.tabs.addTab(self.logs_states_widget, "Logs & States")
 
@@ -1600,22 +1662,11 @@ class DebugWindow(QtWidgets.QWidget):
         layout.addWidget(btn)
 
     def update_debug_info(self):
-        """Updates the debug information displayed in the window."""
+        """Updates debug information while avoiding blocking operations."""
         self.state_history_list.clear()
         history_slice = self.duck.state_history[-100:]
         for t, old_st, new_st in history_slice:
             self.state_history_list.addItem(f"{t}: {old_st} -> {new_st}")
-
-        try:
-            log_path = os.path.join(os.path.expanduser('~'), 'quackduck.log')
-            if os.path.exists(log_path):
-                with open(log_path, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-                last_lines = lines[-200:]
-                self.log_viewer.setPlainText(''.join(last_lines))
-                self.log_viewer.verticalScrollBar().setValue(self.log_viewer.verticalScrollBar().maximum())
-        except:
-            pass
 
     def trigger_double_click(self):
         event = QtGui.QMouseEvent(QtCore.QEvent.MouseButtonDblClick,
@@ -1758,6 +1809,13 @@ class HeartWindow(QtWidgets.QWidget):
         self.resize(int(self.size), int(self.size))
 
         self.show()
+
+    def closeEvent(self, event):
+        if hasattr(self, 'timer') and self.timer.isActive():
+            self.timer.stop()
+        self.timer = None
+        logging.info("HeartWindow closed and cleaned up.")
+        super().closeEvent(event)
 
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
@@ -2619,29 +2677,84 @@ class ResourceManager:
             self.load_sounds_now()
 
     def load_spritesheet_if_needed(self) -> None:
+        """
+        Loads the spritesheet if not already loaded.
+        Ensures the process does not enter infinite loops in case of failures.
+        """
         if self.loaded_spritesheet is None and self.spritesheet_path:
+            # Check for previous failure to avoid redundant attempts
+            if hasattr(self, '_loading_failed') and self._loading_failed:
+                logging.error("Skipping spritesheet loading due to previous failures.")
+                return
+
+            # Verify that the spritesheet file exists
+            if not os.path.exists(self.spritesheet_path):
+                logging.error(f"Spritesheet path does not exist: {self.spritesheet_path}")
+                self._loading_failed = True
+                return
+
+            logging.info(f"Attempting to load spritesheet from: {self.spritesheet_path}")
             spritesheet = QtGui.QPixmap(self.spritesheet_path)
+
+            # Check if the spritesheet is valid
             if spritesheet.isNull():
                 logging.error(f"Failed to load spritesheet image: {self.spritesheet_path}")
-                # fallback to default
-                self.load_default_skin(lazy=False)
+                self._loading_failed = True
                 return
-            self.loaded_spritesheet = spritesheet
 
-    def load_sprites_now(self) -> None:
-        # Full sprites download on request
-        if self.sprites_loaded:
+            # Successfully load the spritesheet
+            self.loaded_spritesheet = spritesheet
+            self._loading_failed = False
+
+    def load_sprites_now(self, force_reload=False) -> None:
+        """
+        Loads all animations from the spritesheet. Allows forced reloading if requested.
+        """
+        # If sprites are already loaded and reloading is not forced, skip loading
+        if self.sprites_loaded and not force_reload:
+            logging.info("Sprites already loaded. Skipping reload.")
             return
+
+        # If sprites failed previously and reloading is not forced, skip loading
+        if getattr(self, '_sprites_failed', False) and not force_reload:
+            logging.error("Sprites failed to load previously. Skipping further attempts.")
+            return
+
+        # Reset failure state if reloading is forced
+        if force_reload:
+            self._sprites_failed = False
+            self._load_attempts = 0
+
+        # Check and limit the number of attempts
+        if hasattr(self, '_load_attempts') and self._load_attempts >= 3:
+            logging.error("Maximum attempts to load sprites reached.")
+            self._sprites_failed = True
+            return
+
+        self._load_attempts = getattr(self, '_load_attempts', 0) + 1
+        logging.info(f"Loading sprites (attempt {self._load_attempts})...")
+
+        # Attempt to load the spritesheet
         self.load_spritesheet_if_needed()
         if self.loaded_spritesheet is None:
+            logging.error("Spritesheet not loaded. Skipping animations.")
+            self._sprites_failed = True
             return
 
         self.animations.clear()
         for anim_name, frame_list in self.animations_config.items():
-            frames = self.get_animation_frames(lambda r,c: self.get_frame(r,c), frame_list)
-            self.animations[anim_name] = frames
-            logging.info(f"Loaded animation '{anim_name}' with {len(frames)} frames.")
-        self.sprites_loaded = True
+            frames = self.get_animation_frames(lambda r, c: self.get_frame(r, c), frame_list)
+            if frames:
+                self.animations[anim_name] = frames
+                logging.info(f"Loaded animation '{anim_name}' with {len(frames)} frames.")
+            else:
+                logging.warning(f"No frames found for animation '{anim_name}'.")
+
+        if not self.animations:
+            logging.error("No animations loaded. Marking sprites as failed.")
+            self._sprites_failed = True
+        else:
+            self.sprites_loaded = True
 
     def load_sounds_now(self) -> None:
         if self.sounds_loaded:
@@ -2853,6 +2966,9 @@ class ResourceManager:
         return frames
 
     def get_random_sound(self) -> Optional[str]:
+        """
+        Returns a random sound file from the loaded sound list.
+        """
         if not self.sounds_loaded:
             self.load_sounds_now()
         return random.choice(self.sounds) if self.sounds else None
@@ -2870,8 +2986,16 @@ class MicrophoneListener(QtCore.QThread):
         self.running = True
 
     def run(self):
+        """
+        Audio input processing thread.
+        Prevents overflow errors and manages input stream safely.
+        """
         def audio_callback(indata, frames, time, status):
+            """
+            Handles audio input data and calculates volume levels.
+            """
             try:
+                # Log any status messages from the audio stream
                 if status:
                     logging.warning(f"Status: {status}")
                 volume_norm = np.linalg.norm(indata) * 10
@@ -2881,12 +3005,14 @@ class MicrophoneListener(QtCore.QThread):
                 logging.error(f"Error in audio_callback: {e}")
 
         try:
+            # Configure the audio input stream
             with sd.InputStream(device=self.device_index,
                                 channels=1,
-                                samplerate=44100,
+                                samplerate=22050,
+                                blocksize=2048,  # Smaller block size to reduce latency
                                 callback=audio_callback):
                 while self.running:
-                    self.msleep(100)
+                    sd.sleep(100)  # Prevents buffer overflow
         except Exception as e:
             logging.error(f"Error opening audio stream: {e}")
             self.running = False
@@ -2980,6 +3106,8 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
 
     def hide_duck(self):
         self.parent.hide()
+        if hasattr(self.parent, 'name_window') and self.parent.name_window and self.parent.name_window.isVisible():
+            self.parent.name_window.hide()
         if os.path.exists(self.hidden_icon_path):
             self.setIcon(QtGui.QIcon(self.hidden_icon_path))
         # force_idle=False, so as not to switch states
@@ -2987,6 +3115,8 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
 
     def show_duck(self):
         self.parent.show()
+        if hasattr(self.parent, 'name_window') and self.parent.name_window and self.parent.show_name:
+            self.parent.name_window.show()
         self.parent.raise_()
         self.parent.activateWindow()
         if os.path.exists(self.visible_icon_path):
@@ -3359,7 +3489,6 @@ class SettingsWindow(QMainWindow):
                 border: none;
                 padding: 8px 16px;
                 border-radius: 4px;
-                transition: background-color 0.3s ease;
             }}
             QPushButton#cancelButton:hover {{
                 background-color: #555;
@@ -3751,7 +3880,7 @@ class SettingsWindow(QMainWindow):
             }
         """)
         item_layout = QVBoxLayout(item)
-        item_layout.setContentsMargins(0,0,0,0)
+        item_layout.setContentsMargins(0, 0, 0, 0)
 
         animation_label = QLabel()
         animation_label.setAlignment(Qt.AlignCenter)
@@ -3759,24 +3888,25 @@ class SettingsWindow(QMainWindow):
         animation_label.frame_index = 0
         animation_label.setFixedSize(s(128), s(128))
 
+        # Local function to update animation frames
         def update_frame():
-            if not animation_label.frames:
-                logging.error("No frames available for animation.")
-                return
-            frm = animation_label.frames[animation_label.frame_index]
-            frm_scaled = frm.scaled(s(128), s(128), Qt.KeepAspectRatio, Qt.FastTransformation)
-            animation_label.setPixmap(frm_scaled)
-            animation_label.frame_index = (animation_label.frame_index + 1) % len(animation_label.frames)
+            if hasattr(animation_label, 'frames') and animation_label.frames:
+                frame = animation_label.frames[animation_label.frame_index]
+                scaled_frame = frame.scaled(s(128), s(128), Qt.KeepAspectRatio, Qt.FastTransformation)
+                animation_label.setPixmap(scaled_frame)
+                animation_label.frame_index = (animation_label.frame_index + 1) % len(animation_label.frames)
 
+        # Setting up a timer for animation
         timer = QTimer(animation_label)
         timer.timeout.connect(update_frame)
         timer.start(150)
-        update_frame()
+        update_frame()  # Setting the initial frame
         animation_label.timer = timer
 
         item_layout.addWidget(animation_label, alignment=Qt.AlignCenter)
-        item.setToolTip("default")
+        item.setToolTip("Default Skin")
 
+        # Handling a click to apply a skin
         def on_click(event):
             try:
                 self.duck.selected_skin = None
@@ -4083,8 +4213,10 @@ class SettingsWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl(url))
 
     def update_mic_preview(self):
-        if hasattr(self.duck,'current_volume'):
+        if hasattr(self, 'duck') and hasattr(self.duck, 'current_volume'):
             self.mic_level_preview.setValue(int(self.duck.current_volume))
+        else:
+            logging.warning("Duck object or current_volume attribute is missing.")
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
