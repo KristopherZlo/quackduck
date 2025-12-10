@@ -1,0 +1,19 @@
+# Core runtime
+PyQt6>=6.6
+sounddevice>=0.4
+numpy>=1.24
+requests>=2.31
+pywin32>=306; sys_platform == "win32"
+
+# Assets / media helpers
+pillow>=10.0
+imageio>=2.33
+pydub>=0.25
+
+# Windows audio control (used by pycaw helpers)
+pycaw>=20181226; sys_platform == "win32"
+comtypes>=1.1; sys_platform == "win32"
+
+# Legacy/alt UI stacks used in auxiliary scripts
+PyQt5>=5.15
+PySide6>=6.6
