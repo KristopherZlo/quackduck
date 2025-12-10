@@ -1,0 +1,34 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pkl
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Virtual environments
+.env/
+.venv/
+venv/
+
+# Build / installer output
+build/
+dist/
+build_output/
+temp_updater/
+
+# Tooling / IDE
+.vscode/
+.idea/
+
+# Packaging / metadata
+*.egg-info/
+.cache/
+pip-wheel-metadata/
+
+# OS noise
+Thumbs.db
+.DS_Store
