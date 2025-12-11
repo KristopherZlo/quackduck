@@ -40,6 +40,22 @@ if sys.platform == "win32":
     import win32process
 
 
+class _UpdateCheckThread(QtCore.QThread):
+    result_ready = QtCore.pyqtSignal(object)
+
+    def __init__(self, updater):
+        super().__init__()
+        self.updater = updater
+
+    def run(self):
+        try:
+            latest_release = self.updater.check_for_updates()
+        except Exception as exc:  # pragma: no cover - defensive
+            logging.error("Update check failed: %s", exc)
+            latest_release = None
+        self.result_ready.emit(latest_release)
+
+
 def notify_user_about_update(duck, latest_release, manual_trigger=False):
     """
     Show a window with a suggestion to update or skip the version.
@@ -219,6 +235,8 @@ class Duck(QtWidgets.QWidget):
         self.tray_icon.show()
 
         self.current_volume = 0
+        self.drag_move_throttle_ns = 16_000_000  # ~60 fps throttle for drag
+        self._last_drag_move_ts = 0
 
         self.pet_name = self.settings_manager.get_value('pet_name', default="", value_type=str)
         if self.pet_name:
@@ -238,9 +256,9 @@ class Duck(QtWidgets.QWidget):
         self.run_timer.timeout.connect(self.check_run_state_trigger)
         self.run_timer.start(5 * 60 * 1000)
 
-        latest_release = self.updater.check_for_updates()
-        if latest_release:
-            notify_user_about_update(self, latest_release, manual_trigger=False)
+        self.update_check_thread = None
+        self.update_check_manual_trigger = False
+        self.start_update_check()
 
         self.is_paused_for_fullscreen = False
         self.fullscreen_check_timer = QtCore.QTimer()
@@ -271,12 +289,26 @@ class Duck(QtWidgets.QWidget):
         _, process_id = win32process.GetWindowThreadProcessId(hwnd_foreground)
         process_name = ""
         try:
-            h_process = win32api.OpenProcess(win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ, False, process_id)
-            exe_name = win32process.GetModuleFileNameEx(h_process, 0)
-            process_name = os.path.basename(exe_name)
-            win32api.CloseHandle(h_process)
-        except Exception as e:
-            logging.error(f"Failed to retrieve process name: {e}")
+            h_process = win32api.OpenProcess(
+                win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ,
+                False,
+                process_id,
+            )
+        except Exception as exc:
+            logging.debug("Could not open foreground process %s: %s", process_id, exc)
+            h_process = None
+
+        if h_process:
+            try:
+                exe_name = win32process.GetModuleFileNameEx(h_process, 0)
+                process_name = os.path.basename(exe_name)
+            except Exception as exc:
+                logging.debug("Could not read process name for pid %s: %s", process_id, exc)
+            finally:
+                try:
+                    win32api.CloseHandle(h_process)
+                except Exception:
+                    pass
 
         # Check if the active window is the desktop (Explorer)
         if class_name in {"Progman", "WorkerW"} or process_name.lower() == "explorer.exe":
@@ -302,13 +334,13 @@ class Duck(QtWidgets.QWidget):
 
         if is_foreground_fullscreen:
             if not self.is_paused_for_fullscreen:
-                logging.info("Fullscreen application detected — pausing the duck.")
+                logging.info("Fullscreen application detected - pausing the duck.")
                 self.pause_duck()
                 self.is_paused_for_fullscreen = True
         else:
             # Not fullscreen
             if self.is_paused_for_fullscreen:
-                logging.info("Fullscreen application closed or minimized — resuming the duck.")
+                logging.info("Fullscreen application closed or minimized - resuming the duck.")
                 self.resume_duck()
                 self.is_paused_for_fullscreen = False
 
@@ -367,25 +399,47 @@ class Duck(QtWidgets.QWidget):
         Automatic check for updates using our AutoUpdater. 
         If a new release is available, notify the user.
         """
-        latest_release = self.updater.check_for_updates()
-        if latest_release:
-            notify_user_about_update(self, latest_release, manual_trigger=False)
-        else:
-            logging.info("No new updates found automatically.")
+        self.start_update_check(manual_trigger=False)
 
     def check_for_updates_manual(self):
         """
         Manual check for updates (e.g. from a tray menu).
         """
-        latest_release = self.updater.check_for_updates()
+        self.start_update_check(manual_trigger=True)
+
+    def start_update_check(self, manual_trigger: bool = False):
+        """
+        Run the update check in a background thread to keep the UI responsive.
+        """
+        if self.update_check_thread and self.update_check_thread.isRunning():
+            logging.debug("Update check already in progress; skipping new request.")
+            return
+
+        self.update_check_manual_trigger = manual_trigger
+        self.update_check_thread = _UpdateCheckThread(self.updater)
+        self.update_check_thread.result_ready.connect(self.on_update_check_finished)
+        self.update_check_thread.finished.connect(self._clear_update_check_thread)
+        self.update_check_thread.finished.connect(self.update_check_thread.deleteLater)
+        self.update_check_thread.start()
+
+    def on_update_check_finished(self, latest_release):
+        manual_trigger = getattr(self, "update_check_manual_trigger", False)
+
         if latest_release:
-            notify_user_about_update(self, latest_release, manual_trigger=True)
-        else:
+            notify_user_about_update(self, latest_release, manual_trigger=manual_trigger)
+        elif manual_trigger:
             QMessageBox.information(
-                self, 
+                self,
                 translations.get("no_updates_title", "No Updates"),
                 translations.get("latest_version_message", "You already have the latest version installed.")
             )
+        else:
+            logging.info("No new updates found automatically.")
+
+        self.update_check_manual_trigger = False
+
+    def _clear_update_check_thread(self):
+        self.update_check_thread = None
 
     def set_skipped_version(self, version: str):
         """

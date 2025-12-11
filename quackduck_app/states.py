@@ -343,6 +343,9 @@ class DraggingState(State):
         if self.duck.name_window:
             self.duck.name_window.hide()
 
+        # Reset drag throttling timestamp on entry.
+        self.duck._last_drag_move_ts = 0
+
     def update_animation(self):
         if not self.frames:
             return
@@ -356,6 +359,7 @@ class DraggingState(State):
     def exit(self):
         if self.duck.name_window and self.duck.show_name and self.duck.pet_name.strip():
             self.duck.name_window.show()
+        self.duck._last_drag_move_ts = 0
 
     def update_frame(self):
         if not self.frames:
@@ -370,9 +374,23 @@ class DraggingState(State):
         self.offset = event.pos()
 
     def handle_mouse_move(self, event):
+        now_ns = time.perf_counter_ns()
+        if (
+            self.duck._last_drag_move_ts
+            and now_ns - self.duck._last_drag_move_ts < self.duck.drag_move_throttle_ns
+        ):
+            return
+        self.duck._last_drag_move_ts = now_ns
+
         new_pos = QtGui.QCursor.pos() - self.offset
-        self.duck.duck_x = new_pos.x()
-        self.duck.duck_y = new_pos.y()
+        new_x = new_pos.x()
+        new_y = new_pos.y()
+
+        if new_x == self.duck.duck_x and new_y == self.duck.duck_y:
+            return
+
+        self.duck.duck_x = new_x
+        self.duck.duck_y = new_y
         self.duck.move(int(self.duck.duck_x), int(self.duck.duck_y))
 
         if self.duck.name_window and self.duck.show_name and self.duck.pet_name.strip():
