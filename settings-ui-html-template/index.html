@@ -1,0 +1,1715 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Quack Duck Settings</title>
+    <!-- Local Feather-compatible icons, no runtime network dependency. -->
+    <script src="feather-lite.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+
+      /* Styling Scrollbars */
+      * {
+        scrollbar-width: thin;
+        scrollbar-color: #666 transparent;
+      }
+
+      *::-webkit-scrollbar {
+        width: 2px;
+      }
+
+      *::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      *::-webkit-scrollbar-thumb {
+        background-color: rgba(0, 0, 0, 0);
+        border-radius: 0;
+      }
+
+      *::-webkit-scrollbar-button {
+        display: none;
+      }
+
+      body {
+        background: #1e1e1e;
+        color: #fff;
+        padding: 20px;
+        min-height: 100vh;
+      }
+
+      .container {
+        max-width: 1111px;
+        min-height: 600px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: 250px 1fr;
+        gap: 20px;
+        background: #252525;
+        border-radius: 8px;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .sidebar {
+        background: #252525;
+        padding: 20px;
+        position: relative;
+        z-index: 2;
+        max-height: 90vh;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+      }
+
+      #version {
+        margin-top: auto;
+        text-align: center;
+        color: #888;
+        font-size: 0.9em;
+      }
+
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 30px;
+        padding: 10px;
+      }
+
+      .logo-img {
+        width: 40px;
+        height: 40px;
+        background: #0078d4;
+        border-radius: 8px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .menu-item {
+        padding: 12px;
+        margin: 8px 0;
+        border-radius: 6px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        transition: all 0.2s ease;
+        position: relative;
+        border: 1px solid transparent;
+      }
+
+      .menu-item:hover {
+        background: #363636;
+        border-color: transparent;
+      }
+
+      .menu-item.active {
+        background: #363636;
+      }
+
+      .menu-item.active::before {
+        display: none;
+      }
+
+      .menu-item span {
+        display: flex;
+        align-items: center;
+        font-size: 1.2em;
+      }
+
+      .content {
+        padding: 20px;
+        z-index: 2;
+        max-height: 90vh;
+        overflow-y: auto;
+        transition: opacity 0.3s ease;
+      }
+
+      .content h1 {
+        margin-bottom: 30px;
+      }
+
+      .toggle-switch {
+        position: relative;
+        width: 44px;
+        height: 24px;
+        background: #484848;
+        border-radius: 12px;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: background-color 0.3s ease;
+      }
+
+      .toggle-switch.active {
+        background: #0078d4;
+      }
+
+      .toggle-switch::after {
+        content: '';
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        background: white;
+        border-radius: 50%;
+        top: 3px;
+        left: 3px;
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      .toggle-switch.active::after {
+        transform: translateX(20px);
+      }
+
+      .toggle-state {
+        color: rgba(255, 255, 255, 0.9);
+        margin-right: 8px;
+        min-width: 30px;
+        text-align: right;
+        font-size: 1em;
+      }
+
+      .setting-item {
+        padding: 20px;
+        margin-bottom: 15px;
+        background: #2d2d2d;
+        border-radius: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border: 1px solid #363636;
+        transition: border-color 0.2s ease;
+      }
+
+      .setting-item:hover {
+        border-color: #ffffff;
+      }
+
+      .setting-info {
+        flex: 1;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .setting-icon {
+        font-size: 1.2em;
+        margin-top: 2px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        margin: 0;
+      }
+
+      .setting-text {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+
+      .setting-title {
+        margin-bottom: 5px;
+      }
+
+      .setting-description {
+        color: #888;
+        font-size: 0.9em;
+        margin-right: 30px;
+      }
+
+      .select-container {
+        position: relative;
+        width: 250px;
+        flex-shrink: 0;
+      }
+
+      .custom-select {
+        width: 100%;
+        padding: 8px 12px;
+        background: #363636;
+        border: none;
+        border-radius: 4px;
+        color: white;
+        cursor: pointer;
+      }
+
+      .menu-selector {
+        position: absolute;
+        left: 18px;
+        width: 4px;
+        height: 12px;
+        background: #0078d4;
+        border-radius: 2px;
+        transition: height 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+          top 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+          background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        opacity: 0;
+        pointer-events: none;
+        z-index: 2;
+      }
+
+      .menu-selector.stretching {
+        transition: height 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+          top 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      .page {
+        opacity: 0.5;
+        visibility: hidden;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        transform: translateY(20px);
+        transition: opacity 0.4s ease, transform 0.4s ease;
+      }
+
+      .page.active {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+        position: relative;
+        transition: opacity 0.4s ease, transform 0.4s ease;
+      }
+
+      [data-color="#0078d4"] {
+        --color: #4a9eda;
+      }
+
+      [data-color="#00b294"] {
+        --color: #40c4ac;
+      }
+
+      [data-color="#ff8c00"] {
+        --color: #ffa940;
+      }
+
+      [data-color="#e81123"] {
+        --color: #ef4d5c;
+      }
+
+      [data-color="#68217a"] {
+        --color: #8c4d99;
+      }
+
+      [data-color="#00188f"] {
+        --color: #4054b2;
+      }
+
+      [data-color="#107c10"] {
+        --color: #47a347;
+      }
+
+      .custom-input {
+        background: #363636;
+        border: none;
+        padding: 8px 12px;
+        border-radius: 4px;
+        color: white;
+        width: 200px;
+      }
+
+      .custom-slider {
+        width: 200px;
+        -webkit-appearance: none;
+        height: 4px;
+        background: #363636;
+        border-radius: 2px;
+        outline: none;
+      }
+
+      .custom-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 16px;
+        height: 16px;
+        background: #0078d4;
+        border-radius: 50%;
+        cursor: pointer;
+      }
+
+      .mic-level {
+        width: 200px;
+        height: 2px;
+        appearance: none;
+        border: none;
+        border-radius: 2px;
+        background: #0078d4;
+      }
+
+      #mic-level-progress {
+        background: #0078d4;
+      }
+
+      #mic-level-progress::-webkit-progress-bar {
+        background: #e0e0e0;
+      }
+
+      #mic-level-progress::-webkit-progress-value {
+        background: #0078d4;
+      }
+
+      #mic-level-progress::-moz-progress-bar {
+        background: #0078d4;
+      }
+
+      .folder-select {
+        display: flex;
+        gap: 8px;
+      }
+
+      .folder-button {
+        background: #0078d4;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        color: white;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .skin-preview-shop {
+        margin-top: 20px;
+        background: #363636;
+        height: 300px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .preview-placeholder {
+        color: #666;
+      }
+
+      .danger-button {
+        background: #e81123;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        color: white;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      /* skin-card */
+      .skin-card-shop {
+        background: #363636;
+        border-radius: 8px;
+        padding: 20px;
+        display: flex;
+        gap: 20px;
+        border: 1px solid;
+        align-items: flex-start;
+        position: relative;
+        margin-bottom: 20px;
+      }
+
+      .skin-preview-small-shop {
+        width: 100px;
+        height: 100px;
+        background: #252525;
+        border-radius: 4px;
+        background-size: cover;
+        background-position: center;
+      }
+
+      .skin-info-shop {
+        flex: 1;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .skin-price-shop {
+        position: absolute;
+        top: 0;
+        right: 0;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 18px;
+        font-weight: bold;
+      }
+
+      .skin-title-shop {
+        font-size: 1.2em;
+        margin-bottom: 8px;
+      }
+
+      .skin-description-shop {
+        color: #888;
+        margin-bottom: 8px;
+      }
+
+      .skin-hashtags-shop {
+        color: #0078d4;
+        font-size: 0.9em;
+        margin-bottom: auto;
+      }
+
+      .buy-button-shop {
+        background: #0078d4;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        color: white;
+        cursor: pointer;
+        align-self: flex-start;
+        position: absolute;
+        bottom: 0;
+        right: 0;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .about-content {
+        text-align: center;
+      }
+
+      .about-content h2 {
+        font-size: 2em;
+        margin-bottom: 20px;
+        margin-top: 80px;
+      }
+
+      .page[data-page="about"] {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
+
+      .about-content {
+        flex-grow: 1;
+        text-align: center;
+      }
+
+      #devlove {
+        margin-top: auto;
+        color: #888;
+        font-size: 0.9em;
+        text-align: center;
+      }
+
+      .social-links {
+        margin: 30px 0;
+        display: flex;
+        gap: 20px;
+        justify-content: center;
+      }
+
+      .social-link {
+        color: #0078d4;
+        text-decoration: none;
+        font-size: 1.2em;
+      }
+
+      .action-buttons {
+        display: flex;
+        gap: 20px;
+        justify-content: center;
+      }
+
+      .action-buttons button {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        color: white;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .support-button {
+        background: #0078d4;
+      }
+
+      .telegram-button {
+        background: #0088cc;
+      }
+
+      .github-button {
+        background: #333;
+      }
+
+      .expand-arrow {
+        width: 20px;
+        height: 20px;
+        cursor: pointer;
+        position: relative;
+        margin-left: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .expand-arrow::before {
+        content: '';
+        width: 8px;
+        height: 8px;
+        border-right: 2px solid #888;
+        border-bottom: 2px solid #888;
+        transform: rotate(45deg);
+        transition: transform 0.2s ease;
+      }
+
+      .expand-arrow.active::before {
+        transform: rotate(-135deg);
+      }
+
+      .expanded-content {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.2s ease, padding 0.2s ease, opacity 0.2s ease;
+        transition: border-color 0.2s ease;
+        background: #2d2d2d;
+        border-radius: 8px;
+        padding: 0;
+        margin: 0px 0 15px;
+        border: 1px solid transparent;
+        color: #888;
+        opacity: 0;
+        display: none;
+      }
+
+      .expanded-content.active {
+        max-height: 100px;
+        padding: 15px 20px;
+        border-color: #363636;
+        opacity: 1;
+        display: block;
+      }
+
+      .expanded-content.active:hover {
+        border-color: #ffffff;
+      }
+
+      .expanded-content table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      .expanded-content td {
+        padding: 4px 0;
+        color: #ccc;
+      }
+
+      .expanded-content td:last-child {
+        text-align: right;
+        color: #fff;
+      }
+
+      /* Slider container with value display */
+      .slider-container {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .slider-value {
+        min-width: 30px;
+        text-align: right;
+      }
+
+      .input-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      /* Animations for expanding content */
+      .slide-down {
+        animation: slideDown 0.3s forwards;
+      }
+
+      .slide-up {
+        animation: slideUp 0.3s forwards;
+      }
+
+      @keyframes slideDown {
+        from {
+          max-height: 0;
+          opacity: 0;
+          padding: 0 20px;
+        }
+
+        to {
+          max-height: 100px;
+          opacity: 1;
+          padding: 15px 20px;
+        }
+      }
+
+      @keyframes slideUp {
+        from {
+          max-height: 100px;
+          opacity: 1;
+          padding: 15px 20px;
+        }
+
+        to {
+          max-height: 0;
+          opacity: 0;
+          padding: 0 20px;
+        }
+      }
+
+      /* Large block of skin previews */
+      .large-skin-preview {
+        margin-bottom: 15px;
+        padding: 10px;
+        background: #2d2d2d;
+        min-height: 100px;
+        max-height: 500px;
+        border-radius: 8px;
+        display: flex;
+        overflow-y: auto;
+        align-content: flex-start;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .skin-card {
+        width: 120px;
+        height: 120px;
+        background-color: #363636;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        cursor: pointer;
+        margin-bottom: 10px;
+        transition: border-color 0.2s ease;
+        border: 1px solid #494949;
+        flex-direction: column;
+        gap: 6px;
+        padding: 8px;
+      }
+
+      .skin-card img {
+        width: 72px;
+        height: 72px;
+        object-fit: contain;
+        image-rendering: pixelated;
+      }
+
+      .skin-card:hover {
+        border: 1px solid #fff;
+      }
+
+      .skin-card.selected {
+        border-color: #0078d4;
+        box-shadow: inset 0 0 0 1px #0078d4;
+      }
+
+      .skin-card-label {
+        width: 100%;
+        color: #d6d6d6;
+        font-size: 0.78em;
+        line-height: 1.1;
+        overflow: hidden;
+        text-align: center;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="sidebar">
+        <div class="menu-selector"></div>
+        <div class="logo">
+          <div class="logo-img"></div>
+          <div>Quack Duck</div>
+        </div>
+        <div class="menu-item active" data-color="#0078d4" data-page="appearance">
+          <span>
+            <i data-feather="feather"></i>
+          </span> Appearance
+        </div>
+        <div class="menu-item" data-color="#00b294" data-page="general">
+          <span>
+            <i data-feather="globe"></i>
+          </span> General
+        </div>
+        <div class="menu-item" data-color="#ff8c00" data-page="audio">
+          <span>
+            <i data-feather="volume-2"></i>
+          </span> Audio
+        </div>
+        <div class="menu-item" data-color="#e81123" data-page="skinstore">
+          <span>
+            <i data-feather="shopping-cart"></i>
+          </span> Skin store
+        </div>
+        <div class="menu-item" data-color="#68217a" data-page="about">
+          <span>
+            <i data-feather="info"></i>
+          </span> About
+        </div>
+        <p id="version">Version 1.5.3</p>
+      </div>
+      <div class="content">
+        <!-- Page "Appearance" -->
+        <div class="page active" data-page="appearance">
+          <h1>Appearance</h1>
+          <!-- Card "Pet Name" -->
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="tag"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Pet name</div>
+                <div class="setting-description">Affects the pet's characteristics and behavior</div>
+              </div>
+            </div>
+            <div class="input-row">
+              <input type="text" class="custom-input" placeholder="Enter pet name">
+              <div class="expand-arrow"></div>
+            </div>
+          </div>
+          <div class="expanded-content">
+            <table>
+              <tr>
+                <td>Speed</td>
+                <td>2.2 units</td>
+              </tr>
+              <tr>
+                <td>Timeout</td>
+                <td>2 mins.</td>
+              </tr>
+            </table>
+          </div>
+          <!-- Card "Show pet name" -->
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="eye"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Show name</div>
+                <div class="setting-description">Enable or disable the display of the name above the pet's head</div>
+              </div>
+            </div>
+            <div class="input-row">
+              <div class="toggle-state">on</div>
+              <div class="toggle-switch active"></div>
+            </div>
+          </div>
+          <!-- Card "Pet size" -->
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="maximize-2"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Pet size</div>
+                <div class="setting-description">The size of the pet on the screen</div>
+              </div>
+            </div>
+            <div class="select-container">
+              <select class="custom-select">
+                <option value="2">Small</option>
+                <option value="3">Medium</option>
+                <option value="4">Big</option>
+              </select>
+            </div>
+          </div>
+          <!-- Card "Path to the skins folder with preview" -->
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="folder"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Skins folder path...</div>
+                <div class="setting-description">Specify the folder containing additional skins, if you have any</div>
+              </div>
+            </div>
+            <div class="folder-select">
+              <input type="text" class="custom-input" placeholder="path/to/your/skins..." readonly>
+              <button class="folder-button">
+                <i data-feather="folder-open"></i> Select </button>
+            </div>
+          </div>
+          <!-- Card "Skin file" -->
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="folder-open"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Skin file path...</div>
+                <div class="setting-description">Choose a specific skin archive or config file</div>
+              </div>
+            </div>
+            <div class="folder-select">
+              <input type="text" class="custom-input" placeholder="path/to/skin.zip..." readonly>
+              <button class="folder-button">
+                <i data-feather="folder-open"></i> Select </button>
+            </div>
+          </div>
+          <!-- Large block of skin previews -->
+          <div class="large-skin-preview">
+            <div class="skin-card"></div>
+            <div class="skin-card"></div>
+            <div class="skin-card"></div>
+            <div class="skin-card"></div>
+            <div class="skin-card"></div>
+            <div class="skin-card"></div>
+            <div class="skin-card"></div>
+            <div class="skin-card"></div>
+            <div class="skin-card"></div>
+            <div class="skin-card"></div>
+          </div>
+        </div>
+        <!-- "General" page -->
+        <div class="page" data-page="general">
+          <h1>General</h1>
+          <!-- Card "Language" -->
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="globe"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Language</div>
+                <div class="setting-description">The application's interface language</div>
+              </div>
+            </div>
+            <div class="select-container">
+              <select class="custom-select">
+                <option value="ru">Russian</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+          </div>
+          <!-- Card "Floor level" -->
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="layers"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Floor level</div>
+                <div class="setting-description">The minimum level where the pet will stand (in pixels)</div>
+              </div>
+            </div>
+            <input type="number" class="custom-input" value="0">
+          </div>
+          <!-- Card "Name shift Y-axis" -->
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="arrow-up"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Name offset</div>
+                <div class="setting-description">Vertical offset (Y-axis) for the pet's name (in pixels)</div>
+              </div>
+            </div>
+            <input type="number" class="custom-input" value="0">
+          </div>
+          <!-- Card "Base font size" -->
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="type"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Font size</div>
+                <div class="setting-description">Base font size for the pet's name, which scales with the pet's size</div>
+              </div>
+            </div>
+            <input type="number" class="custom-input" value="16">
+          </div>
+          <!-- Card "Run at system startup" -->
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="zap"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Autostart</div>
+                <div class="setting-description">Launch the pet with your system</div>
+              </div>
+            </div>
+            <div class="input-row">
+              <div class="toggle-state">off</div>
+              <div class="toggle-switch"></div>
+            </div>
+          </div>
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="sliders"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Random behavior</div>
+                <div class="setting-description">Allow idle random actions and cursor hunting</div>
+              </div>
+            </div>
+            <div class="input-row">
+              <div class="toggle-state">on</div>
+              <div class="toggle-switch active"></div>
+            </div>
+          </div>
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="sliders"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Idle duration</div>
+                <div class="setting-description">Seconds before idle switches back to walking</div>
+              </div>
+            </div>
+            <input type="number" class="custom-input" value="5" min="1" step="1">
+          </div>
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="sliders"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Sleep timeout</div>
+                <div class="setting-description">Seconds of inactivity before the pet goes to sleep</div>
+              </div>
+            </div>
+            <input type="number" class="custom-input" value="300" min="5" step="1">
+          </div>
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="sliders"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Direction interval</div>
+                <div class="setting-description">Seconds between automatic direction changes</div>
+              </div>
+            </div>
+            <input type="number" class="custom-input" value="20" min="1" step="1">
+          </div>
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="sliders"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Playful chance</div>
+                <div class="setting-description">Probability of playful behavior in percent</div>
+              </div>
+            </div>
+            <div class="slider-container">
+              <span class="slider-value" id="playful-chance-value">10</span>
+              <input type="range" class="custom-slider" min="0" max="100" value="10" id="playful-chance-slider">
+            </div>
+          </div>
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="refresh-ccw"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Reset All Settings</div>
+                <div class="setting-description">Reset all settings to their default values</div>
+              </div>
+            </div>
+            <button class="danger-button">Reset</button>
+          </div>
+        </div>
+        <!-- "Audio" page -->
+        <div class="page" data-page="audio">
+          <h1>Audio</h1>
+          <!-- "Input device" card -->
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="mic"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Input device</div>
+              </div>
+            </div>
+            <div class="select-container">
+              <select class="custom-select">
+                <option>Default microphone</option>
+              </select>
+            </div>
+          </div>
+          <!-- Card "Activation threshold" -->
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="sliders"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Activation threshold</div>
+                <div class="setting-description">Sound volume threshold in the microphone at which the pet will play the listening animation</div>
+              </div>
+            </div>
+            <div class="slider-container">
+              <span class="slider-value" id="activation-threshold-value">50</span>
+              <input type="range" class="custom-slider" min="0" max="100" value="50" id="activation-threshold-slider">
+            </div>
+          </div>
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="sliders"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Sound response probability</div>
+                <div class="setting-description">Chance to answer loud microphone input with a sound</div>
+              </div>
+            </div>
+            <div class="slider-container">
+              <span class="slider-value" id="sound-response-probability-value">1</span>
+              <input type="range" class="custom-slider" min="0" max="100" value="1" id="sound-response-probability-slider">
+            </div>
+          </div>
+          <!-- Card "Microphone level preview" -->
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="bar-chart-2"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Microphone level preview</div>
+              </div>
+            </div>
+            <div class="slider-container">
+              <span class="slider-value" id="microphone-level-value">70</span>
+              <progress class="mic-level" id="mic-level-progress" value="70" max="100"></progress>
+            </div>
+          </div>
+          <!-- Card "Sound effects" -->
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="music"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Sound effects</div>
+              </div>
+            </div>
+            <div class="input-row">
+              <div class="toggle-state">on</div>
+              <div class="toggle-switch active"></div>
+            </div>
+          </div>
+          <!-- Card "Effects volume" -->
+          <div class="setting-item" id="effects-volume-item">
+            <div class="setting-info">
+              <div class="setting-icon">
+                <i data-feather="volume-2"></i>
+              </div>
+              <div class="setting-text">
+                <div class="setting-title">Effects volume</div>
+              </div>
+            </div>
+            <div class="slider-container">
+              <span class="slider-value" id="effects-volume-value">50</span>
+              <input type="range" class="custom-slider" min="0" max="100" value="50" id="effects-volume-slider">
+            </div>
+          </div>
+        </div>
+        <!-- "Skin store" page -->
+        <div class="page" data-page="skinstore">
+          <h1>Skin store</h1>
+          <div class="skin-card-shop" style="border-color: #FF5733;">
+            <div class="skin-preview-small-shop" style="background-image: url('skin1.png');"></div>
+            <div class="skin-info-shop">
+              <div class="skin-price-shop">5.99 €</div>
+              <div class="skin-title-shop">Classic Duckling</div>
+              <div class="skin-description-shop">Cute yellow duckling</div>
+              <div class="skin-hashtags-shop">#classic #yellow #cute</div>
+              <button class="buy-button-shop">Purchase</button>
+            </div>
+          </div>
+          <div class="skin-card-shop" style="border-color: #33FF57;">
+            <div class="skin-preview-small-shop" style="background-image: url('skin2.png');"></div>
+            <div class="skin-info-shop">
+              <div class="skin-price-shop">5.99 €</div>
+              <div class="skin-title-shop">Night Duck</div>
+              <div class="skin-description-shop">Dark themed duck</div>
+              <div class="skin-hashtags-shop">#night #dark #stealth</div>
+              <button class="buy-button-shop">Purchase</button>
+            </div>
+          </div>
+          <div class="skin-card-shop" style="border-color: #3357FF;">
+            <div class="skin-preview-small-shop" style="background-image: url('skin3.png');"></div>
+            <div class="skin-info-shop">
+              <div class="skin-price-shop">5.99 €</div>
+              <div class="skin-title-shop">Space Duck</div>
+              <div class="skin-description-shop">Duck with a space suit</div>
+              <div class="skin-hashtags-shop">#space #futuristic #cool</div>
+              <button class="buy-button-shop">Purchase</button>
+            </div>
+          </div>
+          <div class="skin-card-shop" style="border-color: #FF33A8;">
+            <div class="skin-preview-small-shop" style="background-image: url('skin4.png');"></div>
+            <div class="skin-info-shop">
+              <div class="skin-price-shop">5.99 €</div>
+              <div class="skin-title-shop">Golden Duck</div>
+              <div class="skin-description-shop">Duck made of gold</div>
+              <div class="skin-hashtags-shop">#golden #luxury #shiny</div>
+              <button class="buy-button-shop">Purchase</button>
+            </div>
+          </div>
+          <div class="skin-card-shop" style="border-color: #33FFF6;">
+            <div class="skin-preview-small-shop" style="background-image: url('skin5.png');"></div>
+            <div class="skin-info-shop">
+              <div class="skin-price-shop">5.99 €</div>
+              <div class="skin-title-shop">Cyber Duck</div>
+              <div class="skin-description-shop">High-tech cyber duck</div>
+              <div class="skin-hashtags-shop">#cyber #tech #modern</div>
+              <button class="buy-button-shop">Purchase</button>
+            </div>
+          </div>
+        </div>
+        <!-- "About" page -->
+        <div class="page" data-page="about">
+          <h1>About</h1>
+          <div class="about-content">
+            <h2>Quack Duck</h2>
+            <div class="action-buttons">
+              <button class="support-button">
+                <img src="coffee-cup.svg" alt="coffee-cup" height="24px"> Buy me a coffee
+              </button>
+              <button class="telegram-button">
+                <img src="telegram-logo.svg" alt="telegram-logo" height="24px"> Telegram
+              </button>
+              <button class="github-button">
+                <i data-feather="github"></i> GitHub
+              </button>
+              <button class="github-button" id="check-updates-button">
+                <i data-feather="refresh-ccw"></i> Check updates
+              </button>
+            </div>
+          </div>
+          <p id="devlove">Developed with 💜 by zl0yxp</p>
+        </div>
+      </div>
+    </div>
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        // Replace all elements with data-feather with the corresponding SVG icons
+        feather.replace();
+    
+        // Initializing and Animating the Menu Selector
+        const selector = document.querySelector('.menu-selector');
+        const activeItem = document.querySelector('.menu-item.active');
+        const sidebar = document.querySelector('.sidebar');
+    
+        function positionSelector(item) {
+          const itemRect = item.getBoundingClientRect();
+          const sidebarRect = sidebar.getBoundingClientRect();
+          const top = itemRect.top - sidebarRect.top + (itemRect.height - 12) / 2;
+          selector.style.top = `${top}px`;
+          selector.style.height = '12px';
+          selector.style.backgroundColor = getComputedStyle(item).getPropertyValue('--color');
+          selector.style.opacity = '1';
+        }
+        positionSelector(activeItem);
+    
+        // Menu Element Click Handlers
+        document.querySelectorAll('.menu-item').forEach(item => {
+          item.addEventListener('click', () => {
+            if (item.classList.contains('active')) return;
+    
+            const currentActive = document.querySelector('.menu-item.active');
+            const targetPage = item.dataset.page;
+            const allPages = document.querySelectorAll('.page');
+    
+            // Hide all pages
+            allPages.forEach(page => {
+              page.classList.remove('active');
+              page.style.position = 'absolute';
+              page.style.top = '0';
+              page.style.left = '0';
+            });
+    
+            // Show new page
+            const targetPageElement = document.querySelector(`.page[data-page="${targetPage}"]`);
+            if (targetPageElement) {
+              targetPageElement.classList.add('active');
+              targetPageElement.style.position = 'relative';
+              targetPageElement.style.top = '0';
+              targetPageElement.style.left = '0';
+            }
+    
+            // Selector animation
+            const currentRect = currentActive.getBoundingClientRect();
+            const targetRect = item.getBoundingClientRect();
+            const currentTop = currentRect.top - sidebar.getBoundingClientRect().top + (currentRect.height - 12) / 2;
+            const targetTop = targetRect.top - sidebar.getBoundingClientRect().top + (targetRect.height - 12) / 2;
+            const height = Math.abs(targetTop - currentTop) + 12;
+            const top = Math.min(currentTop, targetTop);
+            selector.classList.add('stretching');
+            selector.style.height = `${height}px`;
+            selector.style.top = `${top}px`;
+            selector.style.backgroundColor = getComputedStyle(item).getPropertyValue('--color');
+            setTimeout(() => {
+              selector.classList.remove('stretching');
+              selector.style.height = '12px';
+              selector.style.top = `${targetTop}px`;
+              selector.style.backgroundColor = getComputedStyle(item).getPropertyValue('--color');
+            }, 200);
+    
+            // Updating the active state for the menu
+            currentActive.classList.remove('active');
+            item.classList.add('active');
+          });
+        });
+    
+        // Switch handlers
+        document.querySelectorAll('.toggle-switch').forEach(toggle => {
+          toggle.addEventListener('click', () => {
+            toggle.classList.toggle('active');
+            const stateText = toggle.previousElementSibling;
+            stateText.textContent = toggle.classList.contains('active') ? 'on' : 'off';
+    
+            // Logic for hiding/showing "Effects volume"
+            const settingItem = toggle.closest('.setting-item');
+            const settingTitle = settingItem.querySelector('.setting-title').textContent;
+            if (settingTitle === 'Sound effects') {
+              const effectsVolumeItem = document.getElementById('effects-volume-item');
+              if (toggle.classList.contains('active')) {
+                // Show "Effects volume" with animation
+                effectsVolumeItem.style.display = 'flex';
+                effectsVolumeItem.classList.remove('slide-up');
+                effectsVolumeItem.classList.add('slide-down');
+              } else {
+                // Hide "Effects volume" with animation
+                effectsVolumeItem.classList.remove('slide-down');
+                effectsVolumeItem.classList.add('slide-up');
+                effectsVolumeItem.addEventListener('animationend', function handler(e) {
+                  if (e.animationName === 'slideUp') {
+                    effectsVolumeItem.style.display = 'none';
+                    effectsVolumeItem.classList.remove('slide-up');
+                    effectsVolumeItem.removeEventListener('animationend', handler);
+                  }
+                });
+              }
+            }
+          });
+        });
+    
+        // Initializing the "Effects volume" state on page load
+        const soundEffectsToggle = Array.from(document.querySelectorAll('.setting-item')).find(item => {
+          const title = item.querySelector('.setting-title').textContent;
+          return title === 'Sound effects';
+        })?.querySelector('.toggle-switch');
+        const effectsVolumeItem = document.getElementById('effects-volume-item');
+        if (soundEffectsToggle && !soundEffectsToggle.classList.contains('active')) {
+          effectsVolumeItem.style.display = 'none';
+        }
+    
+        // Extension Arrow Click Handlers
+        document.querySelectorAll('.expand-arrow').forEach(arrow => {
+          arrow.addEventListener('click', function () {
+            this.classList.toggle('active');
+            const content = this.closest('.setting-item').nextElementSibling;
+            if (content && content.classList.contains('expanded-content')) {
+              if (content.classList.contains('active')) {
+                // Hide with animation
+                content.classList.remove('active');
+                content.classList.add('slide-up');
+                content.addEventListener('animationend', function handler(e) {
+                  if (e.animationName === 'slideUp') {
+                    content.style.display = 'none';
+                    content.classList.remove('slide-up');
+                    content.removeEventListener('animationend', handler);
+                  }
+                });
+              } else {
+                // Show with animation
+                content.style.display = 'block';
+                content.classList.remove('slide-up');
+                content.classList.add('slide-down');
+                content.addEventListener('animationend', function handler(e) {
+                  if (e.animationName === 'slideDown') {
+                    content.classList.remove('slide-down');
+                    content.classList.add('active');
+                    content.removeEventListener('animationend', handler);
+                  }
+                });
+              }
+            }
+          });
+        });
+    
+        // Slider Change Handlers
+        document.querySelectorAll('.custom-slider').forEach(slider => {
+          const valueSpan = slider.previousElementSibling;
+          slider.addEventListener('input', () => {
+            valueSpan.textContent = slider.value;
+          });
+        });
+      });
+    
+      const style = document.createElement("style");
+      style.textContent = `
+        .setting-item, .large-skin-preview, .skin-card-shop {
+          position: relative;
+          overflow: hidden;
+        }
+    
+        .setting-item::before, .large-skin-preview::before, .skin-card-shop::before {
+          content: "";
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: radial-gradient(
+            150px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+            rgba(255, 255, 255, 0.04),
+            transparent 80%
+          );
+          pointer-events: none;
+          opacity: 0;
+          transition: opacity 0.2s, background-position 0.1s;
+          z-index: 1;
+          border-radius: inherit;
+        }
+    
+        .setting-item:hover::before, .large-skin-preview:hover::before, .skin-card-shop:hover::before {
+          opacity: 1;
+        }
+      `;
+      document.head.appendChild(style);
+    
+      // Add handlers for all specified classes
+      const interactiveItems = document.querySelectorAll(
+        ".setting-item, .large-skin-preview, .skin-card-shop"
+      );
+    
+      // To make the glow follow the cursor smoothly, we use interpolation
+      interactiveItems.forEach(item => {
+        let mouseX = 0, mouseY = 0; // Current mouse coordinates inside the element
+        let targetX = 0, targetY = 0; // Mouse target coordinates
+    
+        // Smoothly update the glow position
+        const updateGlowPosition = () => {
+          mouseX += (targetX - mouseX) * 0.05; // Interpolation by X
+          mouseY += (targetY - mouseY) * 0.05; // Interpolation by Y
+    
+          item.style.setProperty('--mouse-x', `${mouseX}px`);
+          item.style.setProperty('--mouse-y', `${mouseY}px`);
+    
+          requestAnimationFrame(updateGlowPosition); // Continue the animation
+        };
+    
+        // Processing mouse movement
+        item.addEventListener("mousemove", (e) => {
+          const rect = item.getBoundingClientRect();
+          targetX = e.clientX - rect.left; // Calculate the target X coordinates
+          targetY = e.clientY - rect.top; // Calculate the target Y coordinates
+        });
+    
+        // Start the smooth update animation
+        updateGlowPosition();
+      });
+    </script>
+    <script>
+      // pywebview/WebView2 bridge to sync settings with the backend
+      (function () {
+        let initialized = false;
+        let skinAnimationTimers = [];
+        const byTitle = (title) => {
+          return Array.from(document.querySelectorAll(".setting-item")).find(
+            (item) => item.querySelector(".setting-title")?.textContent.trim() === title
+          );
+        };
+
+        const numberValue = (element, fallback = 0) => {
+          const value = Number(element?.value);
+          return Number.isFinite(value) ? value : fallback;
+        };
+
+        const elements = {};
+        const mapElements = () => {
+          elements.petName = document.querySelector('.page[data-page="appearance"] input.custom-input[placeholder="Enter pet name"]');
+          elements.showNameToggle = byTitle("Show name")?.querySelector(".toggle-switch");
+          elements.petSize = byTitle("Pet size")?.querySelector("select.custom-select");
+          elements.skinPath = byTitle("Skins folder path...")?.querySelector("input.custom-input[readonly]");
+          elements.skinFolderButton = byTitle("Skins folder path...")?.querySelector(".folder-button");
+          elements.skinFilePath = byTitle("Skin file path...")?.querySelector("input.custom-input[readonly]");
+          elements.skinFileButton = byTitle("Skin file path...")?.querySelector(".folder-button");
+          elements.language = byTitle("Language")?.querySelector("select.custom-select");
+          elements.floor = byTitle("Floor level")?.querySelector("input[type='number']");
+          elements.nameOffset = byTitle("Name offset")?.querySelector("input[type='number']");
+          elements.fontSize = byTitle("Font size")?.querySelector("input[type='number']");
+          elements.autostartToggle = byTitle("Autostart")?.querySelector(".toggle-switch");
+          elements.randomBehaviorToggle = byTitle("Random behavior")?.querySelector(".toggle-switch");
+          elements.idleDuration = byTitle("Idle duration")?.querySelector("input[type='number']");
+          elements.sleepTimeout = byTitle("Sleep timeout")?.querySelector("input[type='number']");
+          elements.directionInterval = byTitle("Direction interval")?.querySelector("input[type='number']");
+          elements.playfulChance = document.getElementById("playful-chance-slider");
+          elements.playfulChanceValue = document.getElementById("playful-chance-value");
+          elements.resetButton = byTitle("Reset All Settings")?.querySelector("button");
+          elements.activationSlider = document.getElementById("activation-threshold-slider");
+          elements.activationValue = document.getElementById("activation-threshold-value");
+          elements.soundResponseProbability = document.getElementById("sound-response-probability-slider");
+          elements.soundResponseProbabilityValue = document.getElementById("sound-response-probability-value");
+          elements.micLevelValue = document.getElementById("microphone-level-value");
+          elements.micProgress = document.getElementById("mic-level-progress");
+          elements.soundToggle = byTitle("Sound effects")?.querySelector(".toggle-switch");
+          elements.effectsVolume = document.getElementById("effects-volume-slider");
+          elements.effectsVolumeValue = document.getElementById("effects-volume-value");
+          elements.skinPreview = document.querySelector(".large-skin-preview");
+          elements.checkUpdatesButton = document.getElementById("check-updates-button");
+        };
+
+        const setToggle = (toggleEl, on) => {
+          if (!toggleEl) return;
+          toggleEl.classList.toggle("active", !!on);
+          const stateText = toggleEl.previousElementSibling;
+          if (stateText) {
+            stateText.textContent = on ? "on" : "off";
+          }
+        };
+
+        const clearSkinPreviewTimers = () => {
+          skinAnimationTimers.forEach((timer) => clearInterval(timer));
+          skinAnimationTimers = [];
+        };
+
+        const renderSkinPreviews = (state) => {
+          if (!elements.skinPreview) return;
+          clearSkinPreviewTimers();
+          elements.skinPreview.innerHTML = "";
+
+          const previews = Array.isArray(state.skin_previews) ? state.skin_previews : [];
+          if (previews.length) {
+            previews.slice(0, 24).forEach((preview) => {
+              const frames = Array.isArray(preview.frames) ? preview.frames.filter(Boolean) : [];
+              if (!frames.length) return;
+
+              const card = document.createElement("div");
+              card.className = "skin-card";
+              if (preview.isSelected) card.classList.add("selected");
+              card.title = preview.sourcePath || preview.displayName || preview.id || "Skin";
+
+              const img = document.createElement("img");
+              img.src = frames[0];
+              img.alt = preview.displayName || preview.id || "Skin";
+              card.appendChild(img);
+
+              const label = document.createElement("div");
+              label.className = "skin-card-label";
+              label.textContent = preview.displayName || preview.id || "Skin";
+              card.appendChild(label);
+
+              if (frames.length > 1) {
+                let frameIndex = 0;
+                skinAnimationTimers.push(setInterval(() => {
+                  frameIndex = (frameIndex + 1) % frames.length;
+                  img.src = frames[frameIndex];
+                }, 140));
+              }
+
+              card.addEventListener("click", () => {
+                if (preview.sourcePath) {
+                  update({ selected_skin: preview.sourcePath });
+                }
+              });
+              elements.skinPreview.appendChild(card);
+            });
+            return;
+          }
+
+          if (state.idle_frames?.length) {
+            state.idle_frames.slice(0, 10).forEach((src) => {
+              const card = document.createElement("div");
+              card.className = "skin-card";
+              const img = document.createElement("img");
+              img.src = src;
+              card.appendChild(img);
+              elements.skinPreview.appendChild(card);
+            });
+          }
+        };
+
+        const populateFromState = (state) => {
+          if (!state) return;
+          elements.petName && (elements.petName.value = state.pet_name || "");
+          setToggle(elements.showNameToggle, state.show_name);
+          if (elements.petSize) {
+            const opt = Array.from(elements.petSize.options).find((o) => Number(o.value) === Number(state.pet_size));
+            if (opt) elements.petSize.value = opt.value;
+          }
+          if (elements.skinPath) elements.skinPath.value = state.skin_folder || "";
+          if (elements.skinFilePath) elements.skinFilePath.value = state.selected_skin || "";
+          if (elements.language) {
+            const opt = Array.from(elements.language.options).find((o) => o.value === state.language);
+            if (opt) elements.language.value = opt.value;
+          }
+          if (elements.floor) elements.floor.value = state.floor_level ?? 0;
+          if (elements.nameOffset) elements.nameOffset.value = state.name_offset ?? 0;
+          if (elements.fontSize) elements.fontSize.value = state.font_size ?? 16;
+          setToggle(elements.autostartToggle, state.autostart);
+          setToggle(elements.randomBehaviorToggle, state.random_behavior);
+          if (elements.idleDuration) elements.idleDuration.value = state.idle_duration ?? 5;
+          if (elements.sleepTimeout) elements.sleepTimeout.value = state.sleep_timeout ?? 300;
+          if (elements.directionInterval) elements.directionInterval.value = state.direction_interval ?? 20;
+          if (elements.playfulChance) elements.playfulChance.value = state.playful_chance ?? 10;
+          if (elements.playfulChanceValue) elements.playfulChanceValue.textContent = state.playful_chance ?? 10;
+          if (elements.activationSlider) elements.activationSlider.value = state.activation_threshold ?? 50;
+          if (elements.activationValue) elements.activationValue.textContent = state.activation_threshold ?? 50;
+          if (elements.soundResponseProbability) elements.soundResponseProbability.value = state.sound_response_probability ?? 1;
+          if (elements.soundResponseProbabilityValue) elements.soundResponseProbabilityValue.textContent = state.sound_response_probability ?? 1;
+          if (elements.micLevelValue) elements.micLevelValue.textContent = state.mic_level ?? 0;
+          if (elements.micProgress) elements.micProgress.value = state.mic_level ?? 0;
+          setToggle(elements.soundToggle, state.sound_enabled);
+          if (elements.effectsVolume) elements.effectsVolume.value = state.sound_volume ?? 50;
+          if (elements.effectsVolumeValue) elements.effectsVolumeValue.textContent = state.sound_volume ?? 50;
+
+          renderSkinPreviews(state);
+        };
+
+        const update = async (payload) => {
+          if (!window.pywebview?.api?.update_settings) return;
+          try {
+            const state = await window.pywebview.api.update_settings(payload);
+            populateFromState(state);
+          } catch (e) {
+            console.error(e);
+          }
+        };
+
+        const bindEvents = () => {
+          elements.petName?.addEventListener("input", (e) => update({ pet_name: e.target.value }));
+          elements.showNameToggle?.addEventListener("click", (e) => {
+            const active = e.currentTarget.classList.contains("active");
+            update({ show_name: active });
+          });
+          elements.petSize?.addEventListener("change", (e) => update({ pet_size: Number(e.target.value) }));
+          elements.skinFolderButton?.addEventListener("click", async () => {
+            if (!window.pywebview?.api?.choose_skin_folder) return;
+            try {
+              populateFromState(await window.pywebview.api.choose_skin_folder());
+            } catch (e) {
+              console.error(e);
+            }
+          });
+          elements.skinFileButton?.addEventListener("click", async () => {
+            if (!window.pywebview?.api?.choose_skin_file) return;
+            try {
+              populateFromState(await window.pywebview.api.choose_skin_file());
+            } catch (e) {
+              console.error(e);
+            }
+          });
+          elements.language?.addEventListener("change", (e) => update({ language: e.target.value }));
+          elements.floor?.addEventListener("input", () => update({ floor_level: numberValue(elements.floor) }));
+          elements.nameOffset?.addEventListener("input", () => update({ name_offset: numberValue(elements.nameOffset) }));
+          elements.fontSize?.addEventListener("input", () => update({ font_size: numberValue(elements.fontSize, 16) }));
+          elements.autostartToggle?.addEventListener("click", (e) => {
+            const active = e.currentTarget.classList.contains("active");
+            update({ autostart: active });
+          });
+          elements.randomBehaviorToggle?.addEventListener("click", (e) => {
+            const active = e.currentTarget.classList.contains("active");
+            update({ random_behavior: active });
+          });
+          elements.idleDuration?.addEventListener("input", () => update({ idle_duration: numberValue(elements.idleDuration, 5) }));
+          elements.sleepTimeout?.addEventListener("input", () => update({ sleep_timeout: numberValue(elements.sleepTimeout, 300) }));
+          elements.directionInterval?.addEventListener("input", () => update({ direction_interval: numberValue(elements.directionInterval, 20) }));
+          elements.playfulChance?.addEventListener("input", (e) => {
+            const val = Number(e.target.value);
+            if (elements.playfulChanceValue) elements.playfulChanceValue.textContent = val;
+            update({ playful_chance: val });
+          });
+          elements.resetButton?.addEventListener("click", async () => {
+            if (!window.pywebview?.api?.reset_settings) return;
+            try {
+              populateFromState(await window.pywebview.api.reset_settings());
+            } catch (e) {
+              console.error(e);
+            }
+          });
+          elements.activationSlider?.addEventListener("input", (e) => {
+            const val = Number(e.target.value);
+            if (elements.activationValue) elements.activationValue.textContent = val;
+            update({ activation_threshold: val });
+          });
+          elements.soundResponseProbability?.addEventListener("input", (e) => {
+            const val = Number(e.target.value);
+            if (elements.soundResponseProbabilityValue) elements.soundResponseProbabilityValue.textContent = val;
+            update({ sound_response_probability: val });
+          });
+          elements.soundToggle?.addEventListener("click", (e) => {
+            const active = e.currentTarget.classList.contains("active");
+            update({ sound_enabled: active });
+          });
+          elements.effectsVolume?.addEventListener("input", (e) => {
+            const val = Number(e.target.value);
+            if (elements.effectsVolumeValue) elements.effectsVolumeValue.textContent = val;
+            update({ sound_volume: val });
+          });
+          elements.checkUpdatesButton?.addEventListener("click", async () => {
+            if (!window.pywebview?.api?.check_updates) return;
+            try {
+              const result = await window.pywebview.api.check_updates();
+              if (result?.message) alert(result.message);
+            } catch (e) {
+              console.error(e);
+            }
+          });
+
+          // Periodic mic level refresh
+          setInterval(async () => {
+            if (!window.pywebview?.api?.get_mic_level) return;
+            try {
+              const level = await window.pywebview.api.get_mic_level();
+              if (elements.micLevelValue) elements.micLevelValue.textContent = level;
+              if (elements.micProgress) elements.micProgress.value = level;
+            } catch (e) {
+              // ignore
+            }
+          }, 300);
+        };
+
+        const init = async () => {
+          if (initialized) return;
+          initialized = true;
+          mapElements();
+          if (window.pywebview?.api?.get_state) {
+            try {
+              const state = await window.pywebview.api.get_state();
+              populateFromState(state);
+            } catch (e) {
+              console.error(e);
+            }
+          }
+          bindEvents();
+        };
+
+        window.addEventListener("pywebviewready", init);
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", init);
+        } else {
+          init();
+        }
+      })();
+    </script>
+  </body>
+</html>

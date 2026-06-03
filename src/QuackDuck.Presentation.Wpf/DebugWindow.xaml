@@ -1,0 +1,83 @@
+<Window x:Class="QuackDuck.Presentation.Wpf.DebugWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="QuackDuck Debug"
+        Width="540"
+        Height="640"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResizeWithGrip"
+        Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
+    <Window.Resources>
+        <Style x:Key="CardStyle" TargetType="Border">
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="12" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="Background" Value="{DynamicResource SystemControlAcrylicElementBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style x:Key="StatLabel" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,2,0,0" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+    </Window.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="12">
+            <TextBlock Text="Debug panel" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,12" />
+
+            <Border Style="{StaticResource CardStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="Live info" FontWeight="SemiBold" />
+                        <TextBlock x:Name="StateText" Style="{StaticResource StatLabel}" />
+                        <TextBlock x:Name="PoseText" Style="{StaticResource StatLabel}" />
+                        <TextBlock x:Name="EnergyText" Style="{StaticResource StatLabel}" />
+                        <TextBlock x:Name="DestinationText" Style="{StaticResource StatLabel}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="12,0,0,0">
+                        <TextBlock Text="Microphone" FontWeight="SemiBold" />
+                        <TextBlock x:Name="MicText" Style="{StaticResource StatLabel}" />
+                        <ProgressBar x:Name="MicBar" Height="16" Margin="0,6,0,0" Minimum="0" Maximum="100" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <TextBlock Text="State history" FontWeight="SemiBold" Margin="0,0,0,6" />
+                    <ListBox x:Name="StateHistory" Height="140" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <TextBlock Text="Force state" FontWeight="SemiBold" Margin="0,0,0,6" />
+                    <WrapPanel Margin="0,4,0,0">
+                        <Button Content="Idle" Width="90" Margin="0,0,6,6" Click="OnForceIdle" />
+                        <Button Content="Walk" Width="90" Margin="0,0,6,6" Click="OnForceWalk" />
+                        <Button Content="Run" Width="90" Margin="0,0,6,6" Click="OnForceRun" />
+                        <Button Content="Playful" Width="90" Margin="0,0,6,6" Click="OnForcePlayful" />
+                        <Button Content="Jump" Width="90" Margin="0,0,6,6" Click="OnForceJump" />
+                        <Button Content="Attack" Width="90" Margin="0,0,6,6" Click="OnForceAttack" />
+                        <Button Content="Sleep" Width="90" Margin="0,0,6,6" Click="OnForceSleep" />
+                        <Button Content="Listen" Width="90" Margin="0,0,6,6" Click="OnForceListen" />
+                        <Button Content="Fall" Width="90" Margin="0,0,6,6" Click="OnForceFall" />
+                        <Button Content="Land" Width="90" Margin="0,0,6,6" Click="OnForceLand" />
+                        <Button Content="Drag" Width="90" Margin="0,0,6,6" Click="OnForceDrag" />
+                        <Button Content="Hunt" Width="90" Margin="0,0,6,6" Click="OnForceHunt" />
+                        <Button Content="Wallgrab" Width="90" Margin="0,0,6,6" Click="OnForceWallgrab" />
+                    </WrapPanel>
+                    <WrapPanel Margin="0,10,0,0">
+                        <Button Content="Unstuck" Width="110" Margin="0,0,6,0" Click="OnUnstuck" />
+                        <Button Content="Play sound" Width="110" Click="OnPlaySound" />
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Window>

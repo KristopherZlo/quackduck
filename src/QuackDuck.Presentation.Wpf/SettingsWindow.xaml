@@ -1,0 +1,372 @@
+
+<Window x:Class="QuackDuck.Presentation.Wpf.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:ModernWpf.Controls;assembly=ModernWpf.Controls"
+        Title="Settings"
+        Width="1080"
+        Height="760"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+        FontSize="14"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True">
+    <Window.Resources>
+        <Thickness x:Key="CardPadding">16</Thickness>
+        <Thickness x:Key="CardMargin">0,0,0,12</Thickness>
+        <CornerRadius x:Key="CardRadius">12</CornerRadius>
+        <Style x:Key="CardStyle" TargetType="Border">
+            <Setter Property="CornerRadius" Value="{StaticResource CardRadius}" />
+            <Setter Property="Padding" Value="{StaticResource CardPadding}" />
+            <Setter Property="Margin" Value="{StaticResource CardMargin}" />
+            <Setter Property="Background" Value="{DynamicResource SystemControlAcrylicElementBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style x:Key="SectionHeader" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="Margin" Value="0 0 0 8" />
+        </Style>
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+        <Style TargetType="TabItem">
+            <Setter Property="Visibility" Value="Collapsed" />
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="280" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.ColumnSpan="2" LastChildFill="False" Margin="16,12,16,8">
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                <Button x:Name="CancelButton" Content="Cancel" Width="108" Click="OnCancelClicked" Margin="0,0,8,0" />
+                <Button x:Name="SaveButton" Content="Save" Width="132" Click="OnSaveClicked" Style="{StaticResource AccentButtonStyle}" />
+            </StackPanel>
+            <StackPanel>
+                <TextBlock x:Name="HeaderTitleText" Text="Settings" FontSize="28" FontWeight="SemiBold" />
+                <TextBlock x:Name="HeaderSubtitleText" Text="Native-like Windows 11 controls for QuackDuck"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                           Margin="0,4,0,0" />
+            </StackPanel>
+        </DockPanel>
+
+        <controls:NavigationView x:Name="Nav"
+                                 Grid.Row="1"
+                                 PaneDisplayMode="Left"
+                                 IsBackButtonVisible="Collapsed"
+                                 IsPaneToggleButtonVisible="False"
+                                 IsSettingsVisible="False"
+                                 SelectedItem="{Binding ElementName=NavGeneral}"
+                                 SelectionChanged="OnNavSelectionChanged">
+            <controls:NavigationView.MenuItems>
+                <controls:NavigationViewItem x:Name="NavGeneral" Content="General" Tag="general" IsSelected="True" />
+                <controls:NavigationViewItem x:Name="NavAppearance" Content="Appearance" Tag="appearance" />
+                <controls:NavigationViewItem x:Name="NavAudio" Content="Audio &amp; Mic" Tag="audio" />
+                <controls:NavigationViewItem x:Name="NavSkins" Content="Skins" Tag="skins" />
+                <controls:NavigationViewItem x:Name="NavStore" Content="Skin Store" Tag="store" />
+                <controls:NavigationViewItem x:Name="NavAbout" Content="About" Tag="about" />
+            </controls:NavigationView.MenuItems>
+            <controls:NavigationView.PaneFooter>
+                <StackPanel Margin="12">
+                    <TextBlock Text="Windows 11-style" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    <TextBlock x:Name="VersionText" Text="v0.0.0" FontSize="12" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                </StackPanel>
+            </controls:NavigationView.PaneFooter>
+        </controls:NavigationView>
+
+        <Border Grid.Row="1" Grid.Column="1" Margin="8,0,16,12"
+                Background="{DynamicResource SystemControlBackgroundAltMediumHighBrush}"
+                CornerRadius="12"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="1">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <TabControl x:Name="ContentTabs"
+                            Background="{x:Null}"
+                            BorderThickness="0"
+                            SelectionChanged="OnTabSelectionChanged">
+                    <TabItem x:Name="TabGeneral" Header="General">
+                        <StackPanel Margin="16">
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock x:Name="SessionHeader" Text="Session" Style="{StaticResource SectionHeader}" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <controls:ToggleSwitch x:Name="AutostartSwitch" Header="Start with Windows" Margin="0,0,12,0" />
+                                        <controls:ToggleSwitch x:Name="RandomBehaviorSwitch" Header="Random behaviors" />
+                                    </StackPanel>
+                                    <WrapPanel Margin="0,12,0,0">
+                                        <StackPanel Width="180" Margin="0,0,12,12">
+                                            <TextBlock x:Name="SleepTimeoutLabel" Text="Sleep timeout (s)" Style="{StaticResource FieldLabel}" />
+                                            <controls:NumberBox x:Name="SleepTimeoutBox" Minimum="30" Maximum="3600" Value="300" SpinButtonPlacementMode="Inline" />
+                                        </StackPanel>
+                                        <StackPanel Width="180" Margin="0,0,12,12">
+                                            <TextBlock x:Name="DirectionIntervalLabel" Text="Direction change (s)" Style="{StaticResource FieldLabel}" />
+                                            <controls:NumberBox x:Name="DirectionIntervalBox" Minimum="2" Maximum="240" Value="20" SpinButtonPlacementMode="Inline" />
+                                        </StackPanel>
+                                        <StackPanel Width="180" Margin="0,0,12,12">
+                                            <TextBlock x:Name="IdleDurationLabel" Text="Idle duration (s)" Style="{StaticResource FieldLabel}" />
+                                            <controls:NumberBox x:Name="IdleDurationBox" Minimum="1" Maximum="120" Value="5" SpinButtonPlacementMode="Inline" />
+                                        </StackPanel>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock x:Name="LocalizationHeader" Text="Localization &amp; layout" Style="{StaticResource SectionHeader}" />
+                                    <WrapPanel>
+                                        <StackPanel Width="170" Margin="0,0,12,12">
+                                            <TextBlock x:Name="LanguageLabel" Text="Language" Style="{StaticResource FieldLabel}" />
+                                            <ComboBox x:Name="LanguageCombo" Width="170">
+                                                <ComboBoxItem Content="en" />
+                                                <ComboBoxItem Content="ru" />
+                                            </ComboBox>
+                                        </StackPanel>
+                                        <StackPanel Width="180" Margin="0,0,12,12">
+                                            <TextBlock x:Name="GroundOffsetLabel" Text="Ground offset (px)" Style="{StaticResource FieldLabel}" />
+                                            <controls:NumberBox x:Name="GroundOffsetBox" Minimum="0" Maximum="400" SpinButtonPlacementMode="Inline" />
+                                        </StackPanel>
+                                        <StackPanel Width="200" Margin="0,0,12,12">
+                                            <TextBlock x:Name="PlayfulChanceLabel" Text="Playful chance" Style="{StaticResource FieldLabel}" />
+                                            <StackPanel Orientation="Horizontal">
+                                                <Slider x:Name="PlayfulChanceSlider" Minimum="0" Maximum="1" TickFrequency="0.01" Width="140" />
+                                                <TextBlock x:Name="PlayfulChanceValue" Width="50" Text="10%" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </TabItem>
+
+                    <TabItem x:Name="TabAppearance" Header="Appearance">
+                        <StackPanel Margin="16">
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock x:Name="IdentityHeader" Text="Identity" Style="{StaticResource SectionHeader}" />
+                                    <TextBlock x:Name="PetNameLabel" Text="Pet name" Style="{StaticResource FieldLabel}" />
+                                    <TextBox x:Name="PetNameBox" Width="260" />
+                                    <controls:ToggleSwitch x:Name="ShowNameSwitch" Header="Show name above pet" />
+                                    <WrapPanel Margin="0,12,0,0">
+                                        <StackPanel Width="170" Margin="0,0,12,12">
+                                            <TextBlock x:Name="PetSizeLabel" Text="Pet size" Style="{StaticResource FieldLabel}" />
+                                            <controls:NumberBox x:Name="PetSizeBox" Minimum="1" Maximum="5" Value="3" SpinButtonPlacementMode="Inline" />
+                                        </StackPanel>
+                                        <StackPanel Width="170" Margin="0,0,12,12">
+                                            <TextBlock x:Name="WalkSpeedLabel" Text="Walk speed" Style="{StaticResource FieldLabel}" />
+                                            <controls:NumberBox x:Name="WalkSpeedBox" Minimum="0.5" Maximum="5" Value="2" SpinButtonPlacementMode="Inline" />
+                                        </StackPanel>
+                                        <StackPanel Width="170" Margin="0,0,12,12">
+                                            <TextBlock x:Name="FontSizeLabel" Text="Font size" Style="{StaticResource FieldLabel}" />
+                                            <controls:NumberBox x:Name="FontSizeBox" Minimum="8" Maximum="48" Value="14" SpinButtonPlacementMode="Inline" />
+                                        </StackPanel>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock x:Name="NameOverlayHeader" Text="Name overlay" Style="{StaticResource SectionHeader}" />
+                                    <WrapPanel>
+                                        <StackPanel Width="180" Margin="0,0,12,12">
+                                            <TextBlock x:Name="NameOffsetLabel" Text="Name offset Y (px)" Style="{StaticResource FieldLabel}" />
+                                            <controls:NumberBox x:Name="NameOffsetBox" Minimum="0" Maximum="200" Value="60" SpinButtonPlacementMode="Inline" />
+                                        </StackPanel>
+                                        <StackPanel Width="220" Margin="0,0,12,12">
+                                            <TextBlock x:Name="PreviewLabel" Text="Preview" Style="{StaticResource FieldLabel}" />
+                                            <Border Background="{DynamicResource SystemControlBackgroundAltLowBrush}"
+                                                    CornerRadius="8" Padding="10" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1">
+                                                <TextBlock Text="Quackie" FontSize="24" FontWeight="SemiBold" />
+                                            </Border>
+                                        </StackPanel>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </TabItem>
+
+                    <TabItem x:Name="TabAudio" Header="Audio &amp; Mic">
+                        <StackPanel Margin="16">
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock x:Name="MicrophoneHeader" Text="Microphone" Style="{StaticResource SectionHeader}" />
+                                    <WrapPanel>
+                                        <StackPanel Width="230" Margin="0,0,12,12">
+                                            <TextBlock x:Name="InputDeviceLabel" Text="Input device" Style="{StaticResource FieldLabel}" />
+                                            <ComboBox>
+                                                <ComboBoxItem Content="Default microphone" IsSelected="True" />
+                                                <ComboBoxItem Content="USB Mic" />
+                                                <ComboBoxItem Content="Virtual Cable" />
+                                            </ComboBox>
+                                        </StackPanel>
+                                        <StackPanel Width="220" Margin="0,0,12,12">
+                                            <TextBlock x:Name="ActivationLabel" Text="Activation threshold" Style="{StaticResource FieldLabel}" />
+                                            <StackPanel Orientation="Horizontal">
+                                                <Slider x:Name="ActivationSlider" Minimum="1" Maximum="100" Value="35" TickFrequency="1" Width="140" />
+                                                <TextBlock x:Name="ActivationValue" Text="35" Width="50" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </WrapPanel>
+                                    <StackPanel Width="220" Margin="0,8,0,0">
+                                        <TextBlock x:Name="ResponseProbabilityLabel" Text="Response probability" Style="{StaticResource FieldLabel}" />
+                                        <StackPanel Orientation="Horizontal">
+                                            <Slider x:Name="SoundResponseSlider" Minimum="0" Maximum="1" Value="0.01" TickFrequency="0.01" Width="140" />
+                                            <TextBlock x:Name="SoundResponseValue" Width="50" Text="1%" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock x:Name="SoundHeader" Text="Sound effects" Style="{StaticResource SectionHeader}" />
+                                    <controls:ToggleSwitch x:Name="SoundSwitch" Header="Enable sound effects" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <StackPanel Width="220">
+                                            <TextBlock x:Name="VolumeLabel" Text="Volume" Style="{StaticResource FieldLabel}" />
+                                            <StackPanel Orientation="Horizontal">
+                                                <Slider x:Name="VolumeSlider" Minimum="0" Maximum="1" TickFrequency="0.01" Width="140" />
+                                                <TextBlock x:Name="VolumeValue" Width="50" Text="100%" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </TabItem>
+
+                    <TabItem x:Name="TabSkins" Header="Skins">
+                        <StackPanel Margin="16">
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock x:Name="SourcesHeader" Text="Sources" Style="{StaticResource SectionHeader}" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <TextBox x:Name="SkinFolderBox" Width="320" />
+                                        <Button x:Name="BrowseSkinFolderButton" Content="Browse" Margin="8,0,0,0" Click="OnBrowseSkinFolderClicked" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <TextBox x:Name="SelectedSkinBox" Width="220" />
+                                        <Button x:Name="ReloadSkinsButton" Content="Reload skins" Margin="8,0,0,0" Click="OnReloadSkinsClicked" />
+                                        <Button x:Name="BrowseSkinFileButton" Content="Select file" Margin="8,0,0,0" Click="OnBrowseSkinFileClicked" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock x:Name="PreviewFramesHeader" Text="Preview frames" Style="{StaticResource SectionHeader}" />
+                                    <TextBlock x:Name="SkinsStatusText"
+                                               Margin="0,0,0,8"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    <ListBox x:Name="SkinList"
+                                             BorderThickness="0"
+                                             Background="{x:Null}"
+                                             SelectionChanged="OnSkinSelectionChanged"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                             ScrollViewer.CanContentScroll="False">
+                                        <ListBox.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </ListBox.ItemsPanel>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{DynamicResource SystemControlBackgroundAltLowBrush}"
+                                                        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="10"
+                                                        Margin="0,0,10,10"
+                                                        Width="150"
+                                                        Height="170">
+                                                    <StackPanel>
+                                                        <Border Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                                                                CornerRadius="6"
+                                                                Margin="4"
+                                                                Padding="4"
+                                                                Height="100">
+                                                            <Image Source="{Binding Preview}"
+                                                                   Stretch="Uniform"
+                                                                   HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center"
+                                                                   RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                                                        </Border>
+                                                        <TextBlock Text="{Binding DisplayName}"
+                                                                   FontWeight="SemiBold"
+                                                                   Margin="6,0,6,0"
+                                                                   TextAlignment="Center" />
+                                                        <TextBlock Text="{Binding SourceLabel}"
+                                                                   FontSize="12"
+                                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                                                   Margin="6,2,6,0"
+                                                                   TextAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </TabItem>
+
+                    <TabItem x:Name="TabStore" Header="Skin Store">
+                        <StackPanel Margin="16">
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock x:Name="FeaturedSkinsHeader" Text="Featured skins" Style="{StaticResource SectionHeader}" />
+                                    <Border Background="{DynamicResource SystemControlBackgroundAltLowBrush}"
+                                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="10"
+                                            Padding="12"
+                                            Margin="0,0,0,10">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="120" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Rectangle Fill="{DynamicResource SystemControlBackgroundAltHighBrush}" RadiusX="8" RadiusY="8" Height="80" />
+                                            <StackPanel Grid.Column="1" Margin="10,0">
+                                                <TextBlock Text="Classic Duckling" FontWeight="SemiBold" />
+                                                <TextBlock Text="Cute yellow duckling" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                <TextBlock Text="#classic #yellow #cute" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" FontSize="12" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                                <TextBlock Text="$2.99" FontWeight="Bold" />
+                                                <Button Content="Apply" Width="90" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </TabItem>
+
+                    <TabItem x:Name="TabAbout" Header="About">
+                        <StackPanel Margin="16">
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock x:Name="AboutTitleText" Text="QuackDuck" FontSize="18" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="AboutDescriptionText" Text="Interactive desktop pet with native-like settings on Windows 11." />
+                                    <TextBlock x:Name="AboutAuthorText" Text="Developed by ZloyXP" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </TabItem>
+                </TabControl>
+            </ScrollViewer>
+        </Border>
+    </Grid>
+</Window>

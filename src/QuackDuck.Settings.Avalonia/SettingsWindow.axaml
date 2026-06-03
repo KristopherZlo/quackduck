@@ -1,0 +1,191 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="QuackDuck.Settings.Avalonia.SettingsWindow"
+        Title="QuackDuck Settings"
+        Width="1100"
+        Height="760"
+        Background="#181a1f"
+        CanResize="True">
+  <Grid ColumnDefinitions="240,*">
+    <Border Background="#1f2127" />
+
+    <StackPanel Grid.Column="0" Margin="12" Spacing="10">
+      <TextBlock Text="QuackDuck" FontSize="20" FontWeight="SemiBold" Foreground="#e5e7eb"/>
+      <TextBlock Text="Settings" FontSize="14" Foreground="#9ca3af"/>
+      <TabControl x:Name="NavTabs"
+                  TabStripPlacement="Left"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  Padding="0"
+                  HorizontalContentAlignment="Stretch"
+                  VerticalContentAlignment="Stretch">
+        <TabItem Header="General" />
+        <TabItem Header="Appearance" />
+        <TabItem Header="Audio &amp; Mic" />
+        <TabItem Header="Skins" />
+        <TabItem Header="About" />
+      </TabControl>
+    </StackPanel>
+
+    <Grid Grid.Column="1">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+      </Grid.RowDefinitions>
+
+      <Border Background="#1f2127" Padding="16">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Left" Spacing="6">
+            <TextBlock Text="Settings" FontSize="22" FontWeight="SemiBold" Foreground="#e5e7eb"/>
+            <TextBlock x:Name="StatusText" Foreground="#9ca3af"/>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" Spacing="8">
+            <Button x:Name="SaveButton" Width="120" Content="Save" Click="OnSaveClicked"/>
+            <Button x:Name="CancelButton" Width="120" Content="Cancel" Click="OnCancelClicked"/>
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
+      <TabControl Grid.Row="1"
+                  x:Name="ContentTabs"
+                  TabStripPlacement="Left"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  Padding="0">
+        <TabItem Header="General">
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="16" Spacing="12">
+              <Border Background="#1f2127" Padding="12" CornerRadius="8">
+                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto">
+                  <TextBlock Text="Autostart" Foreground="#e5e7eb" Grid.Row="0" Grid.Column="0"/>
+                  <ToggleSwitch x:Name="AutostartSwitch" Grid.Row="0" Grid.Column="1"/>
+                  <TextBlock Text="Language" Foreground="#e5e7eb" Grid.Row="1" Grid.Column="0"/>
+                  <ComboBox x:Name="LanguageCombo" Grid.Row="1" Grid.Column="1">
+                    <ComboBoxItem Content="en"/>
+                    <ComboBoxItem Content="ru"/>
+                  </ComboBox>
+                </Grid>
+              </Border>
+
+              <Border Background="#1f2127" Padding="12" CornerRadius="8">
+                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto">
+                  <TextBlock Text="Idle duration (s)" Foreground="#e5e7eb" Grid.Row="0" Grid.Column="0"/>
+                  <NumericUpDown x:Name="IdleDurationBox" Grid.Row="0" Grid.Column="1" Minimum="1" Maximum="120" Increment="1"/>
+                  <TextBlock Text="Direction change (s)" Foreground="#e5e7eb" Grid.Row="1" Grid.Column="0"/>
+                  <NumericUpDown x:Name="DirectionIntervalBox" Grid.Row="1" Grid.Column="1" Minimum="2" Maximum="240" Increment="1"/>
+                  <TextBlock Text="Sleep timeout (s)" Foreground="#e5e7eb" Grid.Row="2" Grid.Column="0"/>
+                  <NumericUpDown x:Name="SleepTimeoutBox" Grid.Row="2" Grid.Column="1" Minimum="30" Maximum="3600" Increment="10"/>
+                </Grid>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+
+        <TabItem Header="Appearance">
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="16" Spacing="12">
+              <Border Background="#1f2127" Padding="12" CornerRadius="8">
+                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto">
+                  <TextBlock Text="Pet name" Foreground="#e5e7eb" Grid.Row="0" Grid.Column="0"/>
+                  <TextBox x:Name="PetNameBox" Grid.Row="0" Grid.Column="1"/>
+                  <TextBlock Text="Show name" Foreground="#e5e7eb" Grid.Row="1" Grid.Column="0"/>
+                  <ToggleSwitch x:Name="ShowNameSwitch" Grid.Row="1" Grid.Column="1"/>
+                  <TextBlock Text="Font size" Foreground="#e5e7eb" Grid.Row="2" Grid.Column="0"/>
+                  <NumericUpDown x:Name="FontSizeBox" Grid.Row="2" Grid.Column="1" Minimum="8" Maximum="48" Increment="1"/>
+                </Grid>
+              </Border>
+
+              <Border Background="#1f2127" Padding="12" CornerRadius="8">
+                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto">
+                  <TextBlock Text="Name offset Y" Foreground="#e5e7eb" Grid.Row="0" Grid.Column="0"/>
+                  <NumericUpDown x:Name="NameOffsetBox" Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="200" Increment="5"/>
+                  <TextBlock Text="Pet size" Foreground="#e5e7eb" Grid.Row="1" Grid.Column="0"/>
+                  <NumericUpDown x:Name="PetSizeBox" Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="5" Increment="1"/>
+                  <TextBlock Text="Walk speed" Foreground="#e5e7eb" Grid.Row="2" Grid.Column="0"/>
+                  <NumericUpDown x:Name="WalkSpeedBox" Grid.Row="2" Grid.Column="1" Minimum="0.5" Maximum="5" Increment="0.1"/>
+                </Grid>
+              </Border>
+
+              <Border Background="#1f2127" Padding="12" CornerRadius="8">
+                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto">
+                  <TextBlock Text="Ground offset" Foreground="#e5e7eb" Grid.Row="0" Grid.Column="0"/>
+                  <NumericUpDown x:Name="GroundOffsetBox" Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="400" Increment="5"/>
+                  <TextBlock Text="Playful chance" Foreground="#e5e7eb" Grid.Row="1" Grid.Column="0"/>
+                  <Slider x:Name="PlayfulChanceSlider" Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="1" TickFrequency="0.01"/>
+                </Grid>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+
+        <TabItem Header="Audio &amp; Mic">
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="16" Spacing="12">
+              <Border Background="#1f2127" Padding="12" CornerRadius="8">
+                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto">
+                  <TextBlock Text="Enable sound" Foreground="#e5e7eb" Grid.Row="0" Grid.Column="0"/>
+                  <ToggleSwitch x:Name="SoundSwitch" Grid.Row="0" Grid.Column="1"/>
+                  <TextBlock Text="Volume" Foreground="#e5e7eb" Grid.Row="1" Grid.Column="0"/>
+                  <Slider x:Name="VolumeSlider" Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="1" TickFrequency="0.01"/>
+                  <TextBlock Text="Mic activation threshold" Foreground="#e5e7eb" Grid.Row="2" Grid.Column="0"/>
+                  <NumericUpDown x:Name="ActivationBox" Grid.Row="2" Grid.Column="1" Minimum="1" Maximum="100" Increment="1"/>
+                  <TextBlock Text="Sound response probability" Foreground="#e5e7eb" Grid.Row="3" Grid.Column="0"/>
+                  <Slider x:Name="SoundResponseSlider" Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="1" TickFrequency="0.01"/>
+                </Grid>
+              </Border>
+
+              <Border Background="#1f2127" Padding="12" CornerRadius="8">
+                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto">
+                  <TextBlock Text="Random behaviors" Foreground="#e5e7eb" Grid.Row="0" Grid.Column="0"/>
+                  <ToggleSwitch x:Name="RandomBehaviorSwitch" Grid.Row="0" Grid.Column="1"/>
+                </Grid>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+
+        <TabItem Header="Skins">
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="16" Spacing="12">
+              <Border Background="#1f2127" Padding="12" CornerRadius="8">
+                <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
+                  <TextBlock Text="Skin folder" Foreground="#e5e7eb" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center"/>
+                  <TextBox x:Name="SkinFolderBox" Grid.Row="0" Grid.Column="1"/>
+                  <Button Content="Browse" Grid.Row="0" Grid.Column="2" Click="OnBrowseSkinFolder"/>
+
+                  <TextBlock Text="Selected skin" Foreground="#e5e7eb" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center"/>
+                  <TextBox x:Name="SelectedSkinBox" Grid.Row="1" Grid.Column="1"/>
+                  <StackPanel Orientation="Horizontal" Spacing="6" Grid.Row="1" Grid.Column="2">
+                    <Button Content="Browse file" Click="OnBrowseSkinFile"/>
+                    <Button Content="Reload" Click="OnReloadSkins"/>
+                  </StackPanel>
+                </Grid>
+              </Border>
+
+              <Border Background="#1f2127" Padding="12" CornerRadius="8">
+                <StackPanel Spacing="8">
+                  <TextBlock Text="Available skins" Foreground="#e5e7eb"/>
+                  <ListBox x:Name="SkinList" Height="200"/>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+
+        <TabItem Header="About">
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="16" Spacing="12">
+              <Border Background="#1f2127" Padding="12" CornerRadius="8">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="QuackDuck" FontSize="18" FontWeight="SemiBold" Foreground="#e5e7eb"/>
+                  <TextBlock Text="C# port with Avalonia settings UI." Foreground="#9ca3af"/>
+                  <TextBlock Text="Built for Windows (Avalonia) with cross-platform future." Foreground="#9ca3af"/>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+      </TabControl>
+    </Grid>
+  </Grid>
+</Window>
