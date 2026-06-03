@@ -17,3 +17,4 @@ comtypes>=1.1; sys_platform == "win32"
 # Legacy/alt UI stacks used in auxiliary scripts
 PyQt5>=5.15
 PySide6>=6.6
+pywebview>=4.4

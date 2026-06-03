@@ -30,7 +30,8 @@ from .states import (
     SleepingState,
     WalkingState,
 )
-from .ui import DebugWindow, HeartWindow, NameWindow, SettingsWindow, SystemTrayIcon
+from .ui import DebugWindow, HeartWindow, NameWindow, SystemTrayIcon
+from .web_settings import open_settings_window
 
 if sys.platform == "win32":
     import winreg
@@ -1024,19 +1025,9 @@ class Duck(QtWidgets.QWidget):
 
     def open_settings(self):
         """
-        If the settings window is already open, bring it to the front; otherwise create and show it.
+        Open the settings window. Uses the webview-based UI for the HTML template.
         """
-        if hasattr(self, 'settings_manager_window') and self.settings_manager_window is not None:
-            if self.settings_manager_window.isVisible():
-                self.settings_manager_window.raise_()
-                self.settings_manager_window.activateWindow()
-            else:
-                self.settings_manager_window.show()
-        else:
-            self.settings_manager_window = SettingsWindow(self)
-            self.settings_manager_window.show()
-
-            self.settings_manager_window.destroyed.connect(self.clear_settings_window)
+        open_settings_window(self)
 
     def clear_settings_window(self):
         """
