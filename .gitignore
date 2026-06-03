@@ -9,6 +9,9 @@ __pycache__/
 *.swp
 *.swo
 
+# Local cleanup quarantine
+_repo_junk/
+
 # Virtual environments
 .env/
 .venv/
@@ -19,6 +22,8 @@ build/
 dist/
 build_output/
 temp_updater/
+**/bin/
+**/obj/
 
 # Tooling / IDE
 .vscode/
@@ -28,6 +33,11 @@ temp_updater/
 *.egg-info/
 .cache/
 pip-wheel-metadata/
+*.zip
+
+# Legacy scratch folders kept out of the clean project tree
+test files/
+test_files/
 
 # OS noise
 Thumbs.db
